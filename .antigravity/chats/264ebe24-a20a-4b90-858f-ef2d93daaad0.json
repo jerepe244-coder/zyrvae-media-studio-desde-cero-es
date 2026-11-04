@@ -16,6 +16,18 @@
       "created_at": "2026-11-04T16:34:25.583Z",
       "sender": "ios",
       "is_cancelled": false
+    },
+    {
+      "id": "a42dd391-2cf8-44d0-884c-05ddfd83d198",
+      "role": "user",
+      "content": "Contexto: La Fase 1 de ZYRVAE Media Studio está lista. Vamos a conectar la app directamente a Google Drive (sin usar Google Sheets ni bases de datos externas). La biblioteca leerá los archivos .mp4 de una carpeta específica.\n \nMisión: Reemplazar los datos falsos (mock) de la pantalla /library por los archivos reales de Google Drive.\n \nPaso 1: Instalar Google APIs\n• Ejecutá: npm install googleapis \nPaso 2: Crear el cliente de Google (lib/google.ts)\n• Usá google.auth.GoogleAuth con las variables GOOGLE_CLIENT_EMAIL y GOOGLE_PRIVATE_KEY (recordá reemplazar los \\n literales en la llave privada).\n• Configurá el scope: https://www.googleapis.com/auth/drive.readonly.\n• Exportá el cliente drive. \nPaso 3: API Route para leer los videos (app/api/videos/route.ts)\n• Hacé un GET que use drive.files.list.\n• La consulta (q) debe ser: '${process.env.GOOGLE_DRIVE_FOLDER_ID}' in parents and mimeType contains 'video/' and trashed = false.\n• Pedí los campos: files(id, name, createdTime, webViewLink, thumbnailLink).\n• Mapear el resultado al formato de la UI: { id, title (limpiando el .mp4), driveLink, thumbnail, date }.\n• Devolver el JSON. \nPaso 4: Actualizar la vista /library\n• Hacer un fetch a /api/videos.\n• Reemplazar los datos falsos por los reales. Si está vacío, mostrar un estado lindo de \"No hay videos en Drive aún\" con el botón de \"+ Nuevo Video\".\n• Nota sobre los Badges: Como ya no hay base de datos para guardar estados, todos los videos que aparezcan en la carpeta de Drive se mostrarán con el Badge Verde de \"En Drive\". Podés usar el thumbnailLink de Drive como imagen de miniatura en las tarjetas. \nRegla de oro: No toques el diseño visual (colores, tipografía, layout). Solo cambiá la fuente de datos. Avisame cuando esté listo.",
+      "status": "pending",
+      "model": "gemini-3.8-flash-high",
+      "client_type": "gemini-bridge",
+      "parent_message_id": null,
+      "created_at": "2026-11-04T18:03:51.595Z",
+      "sender": "ios",
+      "is_cancelled": false
     }
   ]
 }

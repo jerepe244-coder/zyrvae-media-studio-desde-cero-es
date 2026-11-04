@@ -8,14 +8,9 @@ import {
   Play,
   Clock,
   HardDrive,
-  Film,
   Sparkles,
   ArrowRight,
-  MoreVertical,
-  SlidersHorizontal,
-  CheckCircle2,
   RefreshCw,
-  FileEdit,
   FolderOpen
 } from "lucide-react"
 
@@ -42,98 +37,74 @@ import {
 
 export type VideoStatus = "En Drive" | "Renderizando" | "Borrador"
 
-interface VideoCardData {
+interface DriveVideo {
   id: string
   title: string
+  driveLink: string
+  thumbnail?: string | null
   date: string
-  status: VideoStatus
-  duration: string
-  aspectRatio: string
-  category: string
-  accentColor: string
 }
 
-const mockVideos: VideoCardData[] = [
-  {
-    id: "vid-1",
-    title: "Comercial La Fresque",
-    date: "Hoy, 14:20",
-    status: "En Drive",
-    duration: "0:30",
-    aspectRatio: "16:9 • 4K",
-    category: "Comercial ZYRVAE",
-    accentColor: "from-emerald-500/20 via-zinc-900 to-zinc-950",
-  },
-  {
-    id: "vid-2",
-    title: "Promo ZYRVAE Summer",
-    date: "Hace 12 min",
-    status: "Renderizando",
-    duration: "0:15",
-    aspectRatio: "9:16 • Reel",
-    category: "Reel",
-    accentColor: "from-amber-500/20 via-zinc-900 to-zinc-950",
-  },
-  {
-    id: "vid-3",
-    title: "Campaña Black Friday - Hero",
-    date: "Ayer, 18:45",
-    status: "En Drive",
-    duration: "0:45",
-    aspectRatio: "16:9 • 1080p",
-    category: "Comercial ZYRVAE",
-    accentColor: "from-purple-500/20 via-zinc-900 to-zinc-950",
-  },
-  {
-    id: "vid-4",
-    title: "Lanzamiento Producto Neo",
-    date: "2 Nov 2026",
-    status: "Borrador",
-    duration: "0:30",
-    aspectRatio: "9:16 • Story",
-    category: "Reel",
-    accentColor: "from-blue-500/20 via-zinc-900 to-zinc-950",
-  },
-  {
-    id: "vid-5",
-    title: "Caso de Éxito: Retail Innovación",
-    date: "28 Oct 2026",
-    status: "En Drive",
-    duration: "1:20",
-    aspectRatio: "16:9 • 4K",
-    category: "Caso de Éxito",
-    accentColor: "from-cyan-500/20 via-zinc-900 to-zinc-950",
-  },
-  {
-    id: "vid-6",
-    title: "Teaser Otoño 2026",
-    date: "24 Oct 2026",
-    status: "Borrador",
-    duration: "0:15",
-    aspectRatio: "9:16 • Reel",
-    category: "Reel",
-    accentColor: "from-rose-500/20 via-zinc-900 to-zinc-950",
-  },
+const GRADIENT_PALETTES = [
+  "from-emerald-500/20 via-zinc-900 to-zinc-950",
+  "from-purple-500/20 via-zinc-900 to-zinc-950",
+  "from-blue-500/20 via-zinc-900 to-zinc-950",
+  "from-cyan-500/20 via-zinc-900 to-zinc-950",
+  "from-amber-500/20 via-zinc-900 to-zinc-950",
+  "from-rose-500/20 via-zinc-900 to-zinc-950",
 ]
 
 export default function LibraryPage() {
+  const [videos, setVideos] = React.useState<DriveVideo[]>([])
+  const [loading, setLoading] = React.useState(true)
   const [filter, setFilter] = React.useState<"all" | VideoStatus>("all")
   const [search, setSearch] = React.useState("")
   const [isDialogOpen, setIsDialogOpen] = React.useState(false)
   const [newVideoTitle, setNewVideoTitle] = React.useState("")
   const [newVideoTemplate, setNewVideoTemplate] = React.useState("Comercial ZYRVAE")
 
+  React.useEffect(() => {
+    let ignore = false
+
+    async function loadVideos() {
+      try {
+        const res = await fetch("/api/videos")
+        if (!res.ok) {
+          throw new Error("Error fetching videos")
+        }
+        const data = await res.json()
+        if (!ignore) {
+          setVideos(Array.isArray(data) ? data : data.videos || [])
+        }
+      } catch (err) {
+        console.error("Error al cargar videos:", err)
+        if (!ignore) {
+          setVideos([])
+        }
+      } finally {
+        if (!ignore) {
+          setLoading(false)
+        }
+      }
+    }
+
+    loadVideos()
+    return () => {
+      ignore = true
+    }
+  }, [])
+
   const filteredVideos = React.useMemo(() => {
-    return mockVideos.filter((video) => {
-      const matchesFilter = filter === "all" || video.status === filter
+    return videos.filter((video) => {
+      // Como ya no hay base de datos, todos los videos de Drive tienen estado "En Drive"
+      const matchesFilter = filter === "all" || filter === "En Drive"
       const matchesSearch =
-        video.title.toLowerCase().includes(search.toLowerCase()) ||
-        video.category.toLowerCase().includes(search.toLowerCase())
+        video.title.toLowerCase().includes(search.toLowerCase())
       return matchesFilter && matchesSearch
     })
-  }, [filter, search])
+  }, [videos, filter, search])
 
-  const renderBadge = (status: VideoStatus) => {
+  const renderBadge = (status: VideoStatus = "En Drive") => {
     switch (status) {
       case "En Drive":
         return (
@@ -169,7 +140,7 @@ export default function LibraryPage() {
               Biblioteca
             </h1>
             <Badge variant="secondary" className="text-[11px] font-mono text-zinc-400">
-              {mockVideos.length} videos
+              {videos.length} {videos.length === 1 ? "video" : "videos"}
             </Badge>
           </div>
           <p className="text-sm text-zinc-400">
@@ -265,7 +236,7 @@ export default function LibraryPage() {
             onClick={() => setFilter("all")}
             className="text-xs h-8 rounded-lg"
           >
-            Todos ({mockVideos.length})
+            Todos ({videos.length})
           </Button>
           <Button
             variant={filter === "En Drive" ? "secondary" : "ghost"}
@@ -274,7 +245,7 @@ export default function LibraryPage() {
             className="text-xs h-8 rounded-lg gap-1.5"
           >
             <span className="w-1.5 h-1.5 rounded-full bg-emerald-400" />
-            En Drive
+            En Drive ({videos.length})
           </Button>
           <Button
             variant={filter === "Renderizando" ? "secondary" : "ghost"}
@@ -283,7 +254,7 @@ export default function LibraryPage() {
             className="text-xs h-8 rounded-lg gap-1.5"
           >
             <span className="w-1.5 h-1.5 rounded-full bg-amber-400" />
-            Renderizando
+            Renderizando (0)
           </Button>
           <Button
             variant={filter === "Borrador" ? "secondary" : "ghost"}
@@ -292,7 +263,7 @@ export default function LibraryPage() {
             className="text-xs h-8 rounded-lg gap-1.5"
           >
             <span className="w-1.5 h-1.5 rounded-full bg-zinc-500" />
-            Borradores
+            Borradores (0)
           </Button>
         </div>
 
@@ -307,115 +278,182 @@ export default function LibraryPage() {
         </div>
       </div>
 
-      {/* Cards Grid */}
-      <motion.div
-        layout
-        className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-6"
-      >
-        <AnimatePresence>
-          {filteredVideos.map((video, idx) => (
-            <motion.div
-              key={video.id}
-              layout
-              initial={{ opacity: 0, y: 15 }}
-              animate={{ opacity: 1, y: 0 }}
-              exit={{ opacity: 0, scale: 0.96 }}
-              transition={{ duration: 0.25, delay: idx * 0.05 }}
-            >
-              <Card className="group overflow-hidden border-zinc-800/80 bg-zinc-900/40 hover:bg-zinc-900/70 hover:border-zinc-700/80 transition-all duration-300 flex flex-col justify-between hover:shadow-xl hover:shadow-black/50">
-                <div>
-                  {/* Thumbnail Placeholder */}
-                  <div className="relative aspect-video w-full overflow-hidden bg-zinc-950 border-b border-zinc-800/60">
-                    {/* Stylized background glow */}
-                    <div
-                      className={`absolute inset-0 bg-gradient-to-br ${video.accentColor} opacity-70 group-hover:opacity-90 transition-opacity`}
-                    />
-                    
-                    {/* Grid overlay for video production aesthetic */}
-                    <div className="absolute inset-0 bg-[linear-gradient(to_right,#27272a20_1px,transparent_1px),linear-gradient(to_bottom,#27272a20_1px,transparent_1px)] bg-[size:16px_16px] pointer-events-none" />
+      {/* Content Section: Loading, Empty or Grid */}
+      {loading ? (
+        <div className="flex flex-col items-center justify-center py-24 text-center">
+          <RefreshCw className="h-8 w-8 animate-spin text-zinc-500 mb-3" />
+          <p className="text-sm text-zinc-400">Cargando videos desde Google Drive...</p>
+        </div>
+      ) : videos.length === 0 ? (
+        /* Empty State */
+        <div className="flex flex-col items-center justify-center p-12 md:p-16 text-center rounded-2xl border border-dashed border-zinc-800 bg-zinc-950/40 my-4">
+          <div className="w-14 h-14 rounded-2xl bg-zinc-900/80 border border-zinc-800 flex items-center justify-center mb-4 text-zinc-400 shadow-inner">
+            <FolderOpen className="h-7 w-7 text-zinc-500" />
+          </div>
+          <h3 className="text-lg font-semibold text-zinc-200 mb-1">
+            No hay videos en Drive aún
+          </h3>
+          <p className="text-sm text-zinc-400 max-w-sm mb-6">
+            Los videos .mp4 sincronizados en tu carpeta de Google Drive aparecerán automáticamente aquí.
+          </p>
+          <Button
+            onClick={() => setIsDialogOpen(true)}
+            className="shadow-lg shadow-white/5 bg-zinc-50 hover:bg-zinc-200 text-zinc-950 font-medium gap-2"
+            size="default"
+          >
+            <Plus className="h-4 w-4" />
+            + Nuevo Video
+          </Button>
+        </div>
+      ) : filteredVideos.length === 0 ? (
+        /* Search or Filter No Results */
+        <div className="flex flex-col items-center justify-center p-12 text-center rounded-2xl border border-dashed border-zinc-800/60 bg-zinc-950/20 my-4">
+          <p className="text-sm text-zinc-400">
+            No se encontraron videos que coincidan con la búsqueda.
+          </p>
+        </div>
+      ) : (
+        /* Cards Grid */
+        <motion.div
+          layout
+          className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-6"
+        >
+          <AnimatePresence>
+            {filteredVideos.map((video, idx) => {
+              const accentColor = GRADIENT_PALETTES[idx % GRADIENT_PALETTES.length]
 
-                    {/* Top status & badge inside thumbnail */}
-                    <div className="absolute top-3 left-3 z-10">
-                      {renderBadge(video.status)}
-                    </div>
+              return (
+                <motion.div
+                  key={video.id}
+                  layout
+                  initial={{ opacity: 0, y: 15 }}
+                  animate={{ opacity: 1, y: 0 }}
+                  exit={{ opacity: 0, scale: 0.96 }}
+                  transition={{ duration: 0.25, delay: idx * 0.05 }}
+                >
+                  <Card className="group overflow-hidden border-zinc-800/80 bg-zinc-900/40 hover:bg-zinc-900/70 hover:border-zinc-700/80 transition-all duration-300 flex flex-col justify-between hover:shadow-xl hover:shadow-black/50">
+                    <div>
+                      {/* Thumbnail Placeholder with Drive Thumbnail Support */}
+                      <div className="relative aspect-video w-full overflow-hidden bg-zinc-950 border-b border-zinc-800/60">
+                        {/* Stylized background glow */}
+                        <div
+                          className={`absolute inset-0 bg-gradient-to-br ${accentColor} opacity-70 group-hover:opacity-90 transition-opacity`}
+                        />
 
-                    <div className="absolute top-3 right-3 z-10">
-                      <span className="text-[10px] font-mono px-2 py-0.5 rounded bg-zinc-950/80 backdrop-blur-md border border-zinc-800/80 text-zinc-300">
-                        {video.aspectRatio}
-                      </span>
-                    </div>
+                        {/* Drive Thumbnail if available */}
+                        {video.thumbnail && (
+                          /* eslint-disable-next-line @next/next/no-img-element */
+                          <img
+                            src={video.thumbnail}
+                            alt={video.title}
+                            referrerPolicy="no-referrer"
+                            className="absolute inset-0 w-full h-full object-cover group-hover:scale-105 transition-transform duration-300"
+                            onError={(e) => {
+                              // Ocultar si falla para dejar el gradiente de fondo
+                              ;(e.currentTarget as HTMLElement).style.display = "none"
+                            }}
+                          />
+                        )}
 
-                    {/* Center Play Icon Placeholder */}
-                    <div className="absolute inset-0 flex items-center justify-center">
-                      <div className="w-11 h-11 rounded-full bg-zinc-950/70 border border-zinc-700/60 flex items-center justify-center backdrop-blur-md text-zinc-200 group-hover:scale-110 group-hover:bg-zinc-100 group-hover:text-zinc-950 transition-all duration-200 shadow-lg">
-                        <Play className="h-4 w-4 ml-0.5 fill-current" />
+                        {/* Subtle overlay for badge readability */}
+                        <div className="absolute inset-0 bg-gradient-to-t from-zinc-950/80 via-transparent to-zinc-950/40 pointer-events-none" />
+
+                        {/* Grid overlay for video production aesthetic */}
+                        <div className="absolute inset-0 bg-[linear-gradient(to_right,#27272a20_1px,transparent_1px),linear-gradient(to_bottom,#27272a20_1px,transparent_1px)] bg-[size:16px_16px] pointer-events-none" />
+
+                        {/* Top status & badge inside thumbnail: siempre "En Drive" */}
+                        <div className="absolute top-3 left-3 z-10">
+                          {renderBadge("En Drive")}
+                        </div>
+
+                        <div className="absolute top-3 right-3 z-10">
+                          <span className="text-[10px] font-mono px-2 py-0.5 rounded bg-zinc-950/80 backdrop-blur-md border border-zinc-800/80 text-zinc-300">
+                            MP4 • HD
+                          </span>
+                        </div>
+
+                        {/* Center Play Icon Placeholder / Direct Link */}
+                        <div className="absolute inset-0 flex items-center justify-center">
+                          {video.driveLink ? (
+                            <a
+                              href={video.driveLink}
+                              target="_blank"
+                              rel="noopener noreferrer"
+                              className="w-11 h-11 rounded-full bg-zinc-950/70 border border-zinc-700/60 flex items-center justify-center backdrop-blur-md text-zinc-200 group-hover:scale-110 group-hover:bg-zinc-100 group-hover:text-zinc-950 transition-all duration-200 shadow-lg cursor-pointer z-10"
+                              title="Ver video en Google Drive"
+                            >
+                              <Play className="h-4 w-4 ml-0.5 fill-current" />
+                            </a>
+                          ) : (
+                            <div className="w-11 h-11 rounded-full bg-zinc-950/70 border border-zinc-700/60 flex items-center justify-center backdrop-blur-md text-zinc-200 group-hover:scale-110 group-hover:bg-zinc-100 group-hover:text-zinc-950 transition-all duration-200 shadow-lg">
+                              <Play className="h-4 w-4 ml-0.5 fill-current" />
+                            </div>
+                          )}
+                        </div>
+
+                        {/* Category tag at bottom left */}
+                        <div className="absolute bottom-2 left-2 text-[10px] font-medium tracking-wide uppercase px-2 py-0.5 rounded bg-zinc-900/80 border border-zinc-800/50 text-zinc-400">
+                          Video ZYRVAE
+                        </div>
                       </div>
+
+                      {/* Card Content / Metadata */}
+                      <CardContent className="p-4 space-y-2">
+                        <div className="flex items-start justify-between gap-2">
+                          <h2
+                            className="font-semibold text-zinc-100 group-hover:text-white transition-colors line-clamp-1 text-base"
+                            title={video.title}
+                          >
+                            {video.title}
+                          </h2>
+                        </div>
+
+                        <div className="flex items-center justify-between text-xs text-zinc-400 pt-1">
+                          <span className="flex items-center gap-1.5 font-mono text-[11px]">
+                            <Clock className="h-3 w-3 text-zinc-400" />
+                            {video.date}
+                          </span>
+
+                          {video.driveLink ? (
+                            <a
+                              href={video.driveLink}
+                              target="_blank"
+                              rel="noopener noreferrer"
+                              className="text-[11px] text-zinc-400 hover:text-emerald-400 transition-colors flex items-center gap-1"
+                            >
+                              <HardDrive className="h-3 w-3 text-emerald-500" />
+                              Drive Sincronizado
+                            </a>
+                          ) : (
+                            <span className="text-[11px] text-zinc-400 flex items-center gap-1">
+                              <HardDrive className="h-3 w-3 text-emerald-500" />
+                              Drive Sincronizado
+                            </span>
+                          )}
+                        </div>
+                      </CardContent>
                     </div>
 
-                    {/* Duration badge at bottom right */}
-                    <div className="absolute bottom-2 right-2 flex items-center gap-1 text-[11px] font-mono px-2 py-0.5 rounded bg-black/80 backdrop-blur-md text-zinc-300">
-                      <Clock className="h-3 w-3 text-zinc-400" />
-                      {video.duration}
+                    {/* Card Action Footer */}
+                    <div className="px-4 pb-4 pt-1 flex items-center gap-2 border-t border-zinc-800/40">
+                      <Link href="/studio" className="w-full">
+                        <Button
+                          variant="outline"
+                          size="sm"
+                          className="w-full text-xs font-medium border-zinc-800 bg-zinc-900/60 hover:bg-zinc-800 text-zinc-300 hover:text-white justify-between group/btn"
+                        >
+                          <span>Abrir en Estudio</span>
+                          <ArrowRight className="h-3 w-3 text-zinc-400 group-hover/btn:translate-x-0.5 transition-transform" />
+                        </Button>
+                      </Link>
                     </div>
-
-                    {/* Category tag at bottom left */}
-                    <div className="absolute bottom-2 left-2 text-[10px] font-medium tracking-wide uppercase px-2 py-0.5 rounded bg-zinc-900/80 border border-zinc-800/50 text-zinc-400">
-                      {video.category}
-                    </div>
-                  </div>
-
-                  {/* Card Content / Metadata */}
-                  <CardContent className="p-4 space-y-2">
-                    <div className="flex items-start justify-between gap-2">
-                      <h2 className="font-semibold text-zinc-100 group-hover:text-white transition-colors line-clamp-1 text-base">
-                        {video.title}
-                      </h2>
-                    </div>
-
-                    <div className="flex items-center justify-between text-xs text-zinc-400 pt-1">
-                      <span className="flex items-center gap-1.5 font-mono text-[11px]">
-                        <Clock className="h-3 w-3 text-zinc-400" />
-                        {video.date}
-                      </span>
-
-                      {video.status === "En Drive" ? (
-                        <span className="text-[11px] text-zinc-400 flex items-center gap-1">
-                          <HardDrive className="h-3 w-3 text-emerald-500" />
-                          Drive Sincronizado
-                        </span>
-                      ) : video.status === "Renderizando" ? (
-                        <span className="text-[11px] text-amber-400/90 flex items-center gap-1">
-                          <RefreshCw className="h-3 w-3 animate-spin" />
-                          68% Completado
-                        </span>
-                      ) : (
-                        <span className="text-[11px] text-zinc-400 flex items-center gap-1">
-                          <FileEdit className="h-3 w-3" />
-                          Sin exportar
-                        </span>
-                      )}
-                    </div>
-                  </CardContent>
-                </div>
-
-                {/* Card Action Footer */}
-                <div className="px-4 pb-4 pt-1 flex items-center gap-2 border-t border-zinc-800/40">
-                  <Link href="/studio" className="w-full">
-                    <Button
-                      variant="outline"
-                      size="sm"
-                      className="w-full text-xs font-medium border-zinc-800 bg-zinc-900/60 hover:bg-zinc-800 text-zinc-300 hover:text-white justify-between group/btn"
-                    >
-                      <span>Abrir en Estudio</span>
-                      <ArrowRight className="h-3 w-3 text-zinc-400 group-hover/btn:translate-x-0.5 transition-transform" />
-                    </Button>
-                  </Link>
-                </div>
-              </Card>
-            </motion.div>
-          ))}
-        </AnimatePresence>
-      </motion.div>
+                  </Card>
+                </motion.div>
+              )
+            })}
+          </AnimatePresence>
+        </motion.div>
+      )}
     </div>
   )
 }

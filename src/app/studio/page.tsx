@@ -366,7 +366,7 @@ export default function StudioPage() {
               Próximamente: Motor de Renderizado
             </DialogTitle>
             <DialogDescription className="text-zinc-400 text-sm leading-relaxed pt-1">
-              La interfaz visual está 100% configurada. En las siguientes fases conectaremos el motor de renderizado (HyperFrames / Remotion) y la sincronización con Google Drive para procesar y exportar <span className="text-zinc-200 font-semibold">"{videoTitle}"</span> con la plantilla <span className="text-zinc-200 font-semibold">"{template}"</span>.
+              La interfaz visual está 100% configurada. En las siguientes fases conectaremos el motor de renderizado (HyperFrames / Remotion) y la sincronización con Google Drive para procesar y exportar <span className="text-zinc-200 font-semibold">&quot;{videoTitle}&quot;</span> con la plantilla <span className="text-zinc-200 font-semibold">&quot;{template}&quot;</span>.
             </DialogDescription>
           </DialogHeader>
 

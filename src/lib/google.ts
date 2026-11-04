@@ -1,0 +1,18 @@
+import { google } from "googleapis"
+
+const clientEmail = process.env.GOOGLE_CLIENT_EMAIL
+const privateKey = process.env.GOOGLE_PRIVATE_KEY
+  ? process.env.GOOGLE_PRIVATE_KEY.replace(/\\n/g, "\n")
+  : undefined
+
+const auth = new google.auth.GoogleAuth({
+  credentials: {
+    client_email: clientEmail,
+    private_key: privateKey,
+  },
+  scopes: ["https://www.googleapis.com/auth/drive.readonly"],
+})
+
+export const drive = google.drive({ version: "v3", auth })
+
+export default drive
