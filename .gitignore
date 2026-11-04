@@ -34,8 +34,6 @@ yarn-error.log*
 .env*
 !.env.example
 
-# Workflow temporalmente ignorado para evitar bloqueo de push por permisos de GitHub App
-.github/workflows/render-video.yml
 
 # vercel
 .vercel

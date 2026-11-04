@@ -2,7 +2,7 @@
 
 import Link from "next/link"
 import { usePathname } from "next/navigation"
-import { Film, Clapperboard, Sparkles, FolderKanban, ShieldCheck, ExternalLink } from "lucide-react"
+import { Film, Clapperboard, Sparkles } from "lucide-react"
 import { cn } from "@/lib/utils"
 
 const navigationItems = [
