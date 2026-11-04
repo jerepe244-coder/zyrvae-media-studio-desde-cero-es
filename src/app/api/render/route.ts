@@ -1,17 +1,25 @@
 import { NextResponse } from "next/server";
 
+export const dynamic = "force-dynamic";
+
 export async function POST(request: Request) {
   try {
     const body = await request.json().catch(() => ({}));
     const { title, text, color } = body;
 
-    const githubToken = process.env.GITHUB_TOKEN;
+    const githubToken = (
+      process.env.GITHUB_TOKEN ||
+      process.env.GH_TOKEN ||
+      process.env.GITHUB_PAT
+    )?.trim();
+
     if (!githubToken) {
-      console.error("Error: Variable de entorno GITHUB_TOKEN no configurada.");
+      console.error("Error: Variable de entorno GITHUB_TOKEN no configurada en Vercel o entorno local.");
       return NextResponse.json(
         {
           error: "GITHUB_TOKEN no está configurado en las variables de entorno del servidor.",
-          details: "Por favor configura GITHUB_TOKEN con permisos de 'repo' o 'actions:write' en tu entorno o archivo .env.local",
+          details:
+            "GITHUB_TOKEN no está presente en este despliegue. Recuerda que si acabas de agregar la variable en Vercel (Project Settings > Environment Variables), debes hacer un 'Redeploy' en Vercel para que surta efecto, y asegurarte de marcar el entorno 'Production'.",
         },
         { status: 500 }
       );
@@ -50,11 +58,19 @@ export async function POST(request: Request) {
     const errorText = await githubResponse.text();
     console.error("Error de GitHub API al despachar workflow:", githubResponse.status, errorText);
 
+    let friendlyAdvice = "";
+    if (githubResponse.status === 401) {
+      friendlyAdvice = "El token de GitHub no es válido o ha expirado. Por favor genera un nuevo token en GitHub.";
+    } else if (githubResponse.status === 403 || githubResponse.status === 404) {
+      friendlyAdvice =
+        "Permisos insuficientes: Asegúrate de que el token de GitHub tenga permisos de 'repo' y 'workflow' (o 'actions:write' si es Fine-grained). GitHub devuelve 404 o 403 si el token no tiene acceso a este repositorio.";
+    }
+
     return NextResponse.json(
       {
         error: "Error al comunicarse con la API de GitHub",
         status: githubResponse.status,
-        details: errorText,
+        details: friendlyAdvice ? `${friendlyAdvice} (${errorText})` : errorText,
       },
       { status: githubResponse.status }
     );
