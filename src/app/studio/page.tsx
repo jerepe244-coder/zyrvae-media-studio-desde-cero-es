@@ -19,7 +19,11 @@ import {
   Ratio,
   Clock,
   Mic,
-  Maximize2
+  Maximize2,
+  Loader2,
+  Palette,
+  Type,
+  ExternalLink
 } from "lucide-react"
 
 import { Button } from "@/components/ui/button"
@@ -42,13 +46,79 @@ import {
   DialogTitle,
 } from "@/components/ui/dialog"
 
+const COLOR_PRESETS = [
+  { label: "Indigo", value: "#6366f1" },
+  { label: "Emerald", value: "#10b981" },
+  { label: "Rose", value: "#f43f5e" },
+  { label: "Amber", value: "#f59e0b" },
+  { label: "Sky", value: "#0ea5e9" },
+  { label: "Violet", value: "#8b5cf6" },
+  { label: "Blanco", value: "#f4f4f5" },
+]
+
 export default function StudioPage() {
   const [videoTitle, setVideoTitle] = React.useState("Comercial ZYRVAE - Lanzamiento 2026")
+  const [videoText, setVideoText] = React.useState("Potencia tu marca con video de alta conversión")
+  const [videoColor, setVideoColor] = React.useState("#6366f1")
   const [template, setTemplate] = React.useState("Comercial ZYRVAE")
   const [aspectRatio, setAspectRatio] = React.useState("9:16")
   const [duration, setDuration] = React.useState("30s")
   const [isPlaying, setIsPlaying] = React.useState(false)
-  const [showRenderModal, setShowRenderModal] = React.useState(false)
+
+  // Render submission state
+  const [isLoading, setIsLoading] = React.useState(false)
+  const [feedback, setFeedback] = React.useState<{
+    type: "success" | "error"
+    message: string
+    details?: string
+  } | null>(null)
+  const [showResultModal, setShowResultModal] = React.useState(false)
+
+  const handleRenderVideo = async (e?: React.FormEvent) => {
+    if (e) e.preventDefault()
+    if (isLoading) return
+
+    setIsLoading(true)
+    setFeedback(null)
+
+    try {
+      const response = await fetch("/api/render", {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json",
+        },
+        body: JSON.stringify({
+          title: videoTitle.trim() || "Comercial ZYRVAE",
+          text: videoText.trim() || "Potencia tu marca con video de alta conversión",
+          color: videoColor || "#6366f1",
+        }),
+      })
+
+      const data = await response.json()
+
+      if (!response.ok) {
+        throw new Error(data.details || data.error || "Error al solicitar el renderizado.")
+      }
+
+      // Success
+      setFeedback({
+        type: "success",
+        message: "Video en proceso. En unos minutos aparecerá en tu Biblioteca (Drive)",
+      })
+      setShowResultModal(true)
+    } catch (err: unknown) {
+      console.error("Error al renderizar:", err)
+      const errorMsg = err instanceof Error ? err.message : String(err)
+      setFeedback({
+        type: "error",
+        message: "No se pudo iniciar el renderizado.",
+        details: errorMsg,
+      })
+      setShowResultModal(true)
+    } finally {
+      setIsLoading(false)
+    }
+  }
 
   return (
     <div className="p-6 md:p-10 max-w-7xl mx-auto space-y-8">
@@ -65,12 +135,12 @@ export default function StudioPage() {
           </div>
           <h1 className="text-2xl md:text-3xl font-bold tracking-tight text-zinc-100 flex items-center gap-3">
             Estudio de Creación
-            <Badge variant="outline" className="text-xs font-normal border-zinc-700/60 text-zinc-400">
-              Mock UI
+            <Badge variant="outline" className="text-xs font-normal border-zinc-700/60 text-emerald-400 bg-emerald-500/10">
+              Motor HyperFrames Activo
             </Badge>
           </h1>
           <p className="text-sm text-zinc-400 mt-1">
-            Configura los parámetros creativos y previsualiza la composición de tu video publicitario.
+            Configura los parámetros creativos, previsualiza el diseño y renderiza tu video a Google Drive mediante GitHub Actions.
           </p>
         </div>
 
@@ -82,6 +152,35 @@ export default function StudioPage() {
           </Link>
         </div>
       </div>
+
+      {/* Persistent Success Banner if already rendered */}
+      {feedback?.type === "success" && (
+        <motion.div
+          initial={{ opacity: 0, y: -10 }}
+          animate={{ opacity: 1, y: 0 }}
+          className="p-4 rounded-xl bg-emerald-950/40 border border-emerald-800/60 text-emerald-200 flex flex-col sm:flex-row sm:items-center justify-between gap-3 shadow-lg"
+        >
+          <div className="flex items-center gap-3">
+            <div className="p-2 rounded-lg bg-emerald-900/60 text-emerald-400">
+              <CheckCircle2 className="h-5 w-5" />
+            </div>
+            <div>
+              <p className="font-semibold text-sm text-emerald-100">
+                {feedback.message}
+              </p>
+              <p className="text-xs text-emerald-400/80 mt-0.5">
+                Pieza: &quot;{videoTitle}&quot; procesándose en GitHub Actions.
+              </p>
+            </div>
+          </div>
+          <Link href="/library">
+            <Button size="sm" className="bg-emerald-600 hover:bg-emerald-500 text-zinc-950 font-semibold gap-1.5 shrink-0">
+              Ir a Biblioteca
+              <ExternalLink className="h-3.5 w-3.5" />
+            </Button>
+          </Link>
+        </motion.div>
+      )}
 
       {/* Main Two-Column Layout */}
       <div className="grid grid-cols-1 lg:grid-cols-12 gap-8 items-start">
@@ -123,6 +222,7 @@ export default function StudioPage() {
                   placeholder="Ej: Comercial La Fresque"
                   value={videoTitle}
                   onChange={(e) => setVideoTitle(e.target.value)}
+                  disabled={isLoading}
                   className="bg-zinc-950/70 border-zinc-800 text-zinc-100 placeholder:text-zinc-600 focus-visible:border-zinc-400 focus-visible:ring-zinc-400/20"
                 />
                 <p className="text-[11px] text-zinc-400">
@@ -130,7 +230,75 @@ export default function StudioPage() {
                 </p>
               </div>
 
-              {/* Field 2: Select Plantilla */}
+              {/* Field 2: Texto o Claim del video */}
+              <div className="space-y-2">
+                <label className="text-xs font-semibold uppercase tracking-wider text-zinc-300 flex items-center justify-between">
+                  <span className="flex items-center gap-1.5">
+                    <Type className="h-3.5 w-3.5 text-zinc-400" />
+                    Texto o mensaje del video
+                  </span>
+                  <span className="text-[11px] font-normal text-zinc-400 lowercase font-mono">
+                    input text
+                  </span>
+                </label>
+                <Input
+                  type="text"
+                  placeholder="Ej: Potencia tu marca con video de alta conversión"
+                  value={videoText}
+                  onChange={(e) => setVideoText(e.target.value)}
+                  disabled={isLoading}
+                  className="bg-zinc-950/70 border-zinc-800 text-zinc-100 placeholder:text-zinc-600 focus-visible:border-zinc-400 focus-visible:ring-zinc-400/20"
+                />
+                <p className="text-[11px] text-zinc-400">
+                  Texto secundario animado que aparecerá bajo el título en el video.
+                </p>
+              </div>
+
+              {/* Field 3: Color de acento de marca */}
+              <div className="space-y-2">
+                <label className="text-xs font-semibold uppercase tracking-wider text-zinc-300 flex items-center justify-between">
+                  <span className="flex items-center gap-1.5">
+                    <Palette className="h-3.5 w-3.5 text-zinc-400" />
+                    Color de acento de marca
+                  </span>
+                  <span className="text-[11px] font-mono text-zinc-400">
+                    {videoColor}
+                  </span>
+                </label>
+                <div className="flex flex-wrap items-center gap-2">
+                  {COLOR_PRESETS.map((preset) => (
+                    <button
+                      key={preset.value}
+                      type="button"
+                      disabled={isLoading}
+                      onClick={() => setVideoColor(preset.value)}
+                      className={`h-8 px-3 rounded-lg border text-xs font-medium flex items-center gap-2 transition-all ${
+                        videoColor.toLowerCase() === preset.value.toLowerCase()
+                          ? "bg-zinc-800 border-zinc-400 text-zinc-100 ring-2 ring-zinc-500/30"
+                          : "bg-zinc-950/50 border-zinc-800 text-zinc-400 hover:text-zinc-200"
+                      }`}
+                    >
+                      <span
+                        className="w-3 h-3 rounded-full shrink-0 shadow-sm"
+                        style={{ backgroundColor: preset.value }}
+                      />
+                      <span>{preset.label}</span>
+                    </button>
+                  ))}
+                  <div className="flex items-center gap-1.5 ml-auto">
+                    <input
+                      type="color"
+                      aria-label="Color personalizado"
+                      value={videoColor.startsWith("#") ? videoColor : "#6366f1"}
+                      onChange={(e) => setVideoColor(e.target.value)}
+                      disabled={isLoading}
+                      className="w-8 h-8 rounded-lg cursor-pointer bg-transparent border-0 p-0"
+                    />
+                  </div>
+                </div>
+              </div>
+
+              {/* Field 4: Select Plantilla */}
               <div className="space-y-2">
                 <label className="text-xs font-semibold uppercase tracking-wider text-zinc-300 flex items-center justify-between">
                   <span>Plantilla</span>
@@ -138,7 +306,7 @@ export default function StudioPage() {
                     3 disponibles
                   </span>
                 </label>
-                <Select value={template} onValueChange={setTemplate}>
+                <Select value={template} onValueChange={setTemplate} disabled={isLoading}>
                   <SelectTrigger className="bg-zinc-950/70 border-zinc-800 text-zinc-100 focus:border-zinc-400 focus:ring-zinc-400/20">
                     <SelectValue placeholder="Selecciona una plantilla" />
                   </SelectTrigger>
@@ -173,7 +341,7 @@ export default function StudioPage() {
 
               {/* Additional Studio Controls (Visual Mock Linear style) */}
               <div className="grid grid-cols-1 sm:grid-cols-2 gap-4 pt-2">
-                {/* Aspect Ratio Mock */}
+                {/* Aspect Ratio */}
                 <div className="space-y-2">
                   <label className="text-xs font-semibold uppercase tracking-wider text-zinc-300 flex items-center gap-1.5">
                     <Ratio className="h-3.5 w-3.5 text-zinc-400" />
@@ -182,6 +350,7 @@ export default function StudioPage() {
                   <div className="grid grid-cols-2 gap-2">
                     <button
                       type="button"
+                      disabled={isLoading}
                       onClick={() => setAspectRatio("9:16")}
                       className={`px-3 py-2 text-xs rounded-lg border text-center transition-all ${
                         aspectRatio === "9:16"
@@ -193,6 +362,7 @@ export default function StudioPage() {
                     </button>
                     <button
                       type="button"
+                      disabled={isLoading}
                       onClick={() => setAspectRatio("16:9")}
                       className={`px-3 py-2 text-xs rounded-lg border text-center transition-all ${
                         aspectRatio === "16:9"
@@ -205,7 +375,7 @@ export default function StudioPage() {
                   </div>
                 </div>
 
-                {/* Duration Mock */}
+                {/* Duration */}
                 <div className="space-y-2">
                   <label className="text-xs font-semibold uppercase tracking-wider text-zinc-300 flex items-center gap-1.5">
                     <Clock className="h-3.5 w-3.5 text-zinc-400" />
@@ -216,6 +386,7 @@ export default function StudioPage() {
                       <button
                         key={dur}
                         type="button"
+                        disabled={isLoading}
                         onClick={() => setDuration(dur)}
                         className={`py-2 text-xs rounded-lg border text-center transition-all ${
                           duration === dur
@@ -232,25 +403,35 @@ export default function StudioPage() {
 
               {/* Engine notice banner */}
               <div className="p-3.5 rounded-lg bg-zinc-950/60 border border-zinc-800/60 flex items-start gap-3">
-                <AlertCircle className="h-4 w-4 text-zinc-400 mt-0.5 shrink-0" />
+                <Sparkles className="h-4 w-4 text-emerald-400 mt-0.5 shrink-0" />
                 <div className="space-y-1">
-                  <p className="text-xs font-medium text-zinc-300">
-                    Fase 1: Maqueta visual y controles interactivos
+                  <p className="text-xs font-medium text-zinc-200">
+                    Fase 3: Renderizado en GitHub Actions + HyperFrames
                   </p>
                   <p className="text-[11px] text-zinc-400 leading-relaxed">
-                    Las configuraciones seleccionadas se reflejan inmediatamente en el simulador de pantalla. El renderizado real se conectará en fases posteriores.
+                    Al pulsar renderizar, se despacha un workflow en GitHub Actions que ejecuta el motor HyperFrames, genera el video MP4 y lo sube directamente a tu carpeta de Google Drive.
                   </p>
                 </div>
               </div>
 
-              {/* Render Button */}
+              {/* Render Button with loading state */}
               <div className="pt-2">
                 <Button
-                  onClick={() => setShowRenderModal(true)}
-                  className="w-full h-11 bg-zinc-100 hover:bg-zinc-200 text-zinc-950 font-semibold shadow-lg shadow-white/5 transition-all text-sm gap-2"
+                  onClick={handleRenderVideo}
+                  disabled={isLoading}
+                  className="w-full h-11 bg-zinc-100 hover:bg-zinc-200 text-zinc-950 font-semibold shadow-lg shadow-white/5 transition-all text-sm gap-2 disabled:opacity-75 disabled:cursor-not-allowed"
                 >
-                  <Sparkles className="h-4 w-4 text-zinc-950 fill-zinc-950" />
-                  Renderizar Video
+                  {isLoading ? (
+                    <>
+                      <Loader2 className="h-4 w-4 animate-spin text-zinc-950" />
+                      Iniciando renderizado en GitHub Actions...
+                    </>
+                  ) : (
+                    <>
+                      <Sparkles className="h-4 w-4 text-zinc-950 fill-zinc-950" />
+                      Renderizar Video
+                    </>
+                  )}
                 </Button>
               </div>
             </CardContent>
@@ -288,8 +469,14 @@ export default function StudioPage() {
               {/* Background gradient lighting effect */}
               <div className="absolute inset-0 bg-gradient-to-b from-zinc-900/60 via-zinc-950 to-zinc-950 pointer-events-none" />
               
-              {/* Radial ambient glow based on template */}
-              <div className="absolute top-1/3 left-1/2 -translate-x-1/2 -translate-y-1/2 w-48 h-48 bg-zinc-500/10 rounded-full blur-3xl pointer-events-none" />
+              {/* Radial ambient glow reacting to selected color */}
+              <div
+                className="absolute top-1/3 left-1/2 -translate-x-1/2 -translate-y-1/2 w-48 h-48 rounded-full blur-3xl pointer-events-none transition-all duration-500"
+                style={{
+                  backgroundColor: videoColor,
+                  opacity: 0.22,
+                }}
+              />
 
               {/* Grid overlay */}
               <div className="absolute inset-0 bg-[linear-gradient(to_right,#27272a15_1px,transparent_1px),linear-gradient(to_bottom,#27272a15_1px,transparent_1px)] bg-[size:16px_16px] pointer-events-none" />
@@ -306,27 +493,34 @@ export default function StudioPage() {
 
               {/* Screen Center: Live Preview Graphic & Play Button */}
               <div className="relative z-10 flex flex-col items-center justify-center text-center my-auto px-3">
-                {/* Big Play Icon */}
+                {/* Big Play Icon with color border */}
                 <button
                   type="button"
                   onClick={() => setIsPlaying(!isPlaying)}
-                  className="w-20 h-20 rounded-full bg-zinc-900/80 hover:bg-zinc-800 border-2 border-zinc-600/80 hover:border-zinc-400 flex items-center justify-center backdrop-blur-md shadow-2xl transition-all duration-200 group-hover:scale-105 active:scale-95"
+                  className="w-20 h-20 rounded-full bg-zinc-900/80 hover:bg-zinc-800 border-2 flex items-center justify-center backdrop-blur-md shadow-2xl transition-all duration-200 group-hover:scale-105 active:scale-95"
+                  style={{ borderColor: videoColor }}
                   aria-label="Previsualización"
                 >
                   <Play className={`h-8 w-8 ml-1 text-zinc-100 fill-zinc-100 ${isPlaying ? "opacity-90" : ""}`} />
                 </button>
 
-                {/* Big Title text "Previsualización" */}
-                <h3 className="mt-4 text-lg font-bold text-zinc-100 tracking-tight">
-                  Previsualización
+                {/* Accent line */}
+                <div
+                  className="w-10 h-1 rounded-full mt-4 transition-all duration-300"
+                  style={{ backgroundColor: videoColor }}
+                />
+
+                {/* Big Title text */}
+                <h3 className="mt-2 text-base font-bold text-zinc-100 tracking-tight max-w-[220px] line-clamp-2">
+                  {videoTitle || "Sin título asignado"}
                 </h3>
 
-                {/* Subtitle / Dynamic project info */}
-                <p className="text-xs text-zinc-400 mt-1 max-w-[200px] truncate font-medium">
-                  {videoTitle || "Sin título asignado"}
+                {/* Subtitle / Dynamic text */}
+                <p className="text-[11px] text-zinc-400 mt-1 max-w-[210px] line-clamp-2">
+                  {videoText || "Texto o mensaje del comercial"}
                 </p>
 
-                <div className="mt-2 inline-flex items-center gap-1.5 px-2.5 py-1 rounded-full bg-zinc-900/90 border border-zinc-800 text-[10px] text-zinc-300">
+                <div className="mt-3 inline-flex items-center gap-1.5 px-2.5 py-1 rounded-full bg-zinc-900/90 border border-zinc-800 text-[10px] text-zinc-300">
                   <Clapperboard className="h-3 w-3 text-zinc-400" />
                   {template}
                 </div>
@@ -334,9 +528,12 @@ export default function StudioPage() {
 
               {/* Screen Bottom Controls Overlay */}
               <div className="relative z-10 space-y-2">
-                {/* Timeline progress bar */}
-                <div className="w-full bg-zinc-800/80 h-1 rounded-full overflow-hidden">
-                  <div className="bg-zinc-200 h-full w-1/3 rounded-full" />
+                {/* Timeline progress bar using color */}
+                <div className="w-full bg-zinc-800/80 h-1.5 rounded-full overflow-hidden">
+                  <div
+                    className="h-full w-2/5 rounded-full transition-all duration-300"
+                    style={{ backgroundColor: videoColor }}
+                  />
                 </div>
 
                 <div className="flex items-center justify-between text-[10px] text-zinc-400 font-mono">
@@ -355,43 +552,87 @@ export default function StudioPage() {
         </motion.div>
       </div>
 
-      {/* Render Dialog Modal ("Próximamente") */}
-      <Dialog open={showRenderModal} onOpenChange={setShowRenderModal}>
+      {/* Render Dialog Result Modal */}
+      <Dialog open={showResultModal} onOpenChange={setShowResultModal}>
         <DialogContent className="sm:max-w-md bg-zinc-950 border-zinc-800 text-zinc-100">
           <DialogHeader>
-            <div className="w-12 h-12 rounded-full bg-zinc-900 border border-zinc-800 flex items-center justify-center mb-2 mx-auto sm:mx-0">
-              <Sparkles className="h-6 w-6 text-zinc-200" />
+            <div
+              className={`w-12 h-12 rounded-full border flex items-center justify-center mb-2 mx-auto sm:mx-0 ${
+                feedback?.type === "success"
+                  ? "bg-emerald-950/60 border-emerald-800/80 text-emerald-400"
+                  : "bg-red-950/60 border-red-800/80 text-red-400"
+              }`}
+            >
+              {feedback?.type === "success" ? (
+                <CheckCircle2 className="h-6 w-6" />
+              ) : (
+                <AlertCircle className="h-6 w-6" />
+              )}
             </div>
             <DialogTitle className="text-lg text-zinc-100">
-              Próximamente: Motor de Renderizado
+              {feedback?.type === "success"
+                ? "¡Renderizado en marcha!"
+                : "Error al iniciar renderizado"}
             </DialogTitle>
-            <DialogDescription className="text-zinc-400 text-sm leading-relaxed pt-1">
-              La interfaz visual está 100% configurada. En las siguientes fases conectaremos el motor de renderizado (HyperFrames / Remotion) y la sincronización con Google Drive para procesar y exportar <span className="text-zinc-200 font-semibold">&quot;{videoTitle}&quot;</span> con la plantilla <span className="text-zinc-200 font-semibold">&quot;{template}&quot;</span>.
+            <DialogDescription className="text-zinc-300 text-sm leading-relaxed pt-1">
+              {feedback?.type === "success" ? (
+                <span className="text-emerald-300 font-medium text-base block mt-1">
+                  Video en proceso. En unos minutos aparecerá en tu Biblioteca (Drive)
+                </span>
+              ) : (
+                feedback?.message
+              )}
             </DialogDescription>
           </DialogHeader>
 
-          <div className="p-3 rounded-lg bg-zinc-900/60 border border-zinc-800/80 space-y-1.5 text-xs text-zinc-300">
-            <div className="flex items-center justify-between">
-              <span className="text-zinc-400">Estado de Fase:</span>
-              <span className="text-emerald-400 font-medium">Fase 1 (UI Diseño) Completada</span>
+          {feedback?.type === "success" ? (
+            <div className="p-3.5 rounded-lg bg-zinc-900/60 border border-zinc-800/80 space-y-2 text-xs text-zinc-300">
+              <div className="flex items-center justify-between">
+                <span className="text-zinc-400">Título:</span>
+                <span className="text-zinc-200 font-semibold">{videoTitle}</span>
+              </div>
+              <div className="flex items-center justify-between">
+                <span className="text-zinc-400">Motor:</span>
+                <span className="text-zinc-200 font-mono">HyperFrames (GitHub Actions)</span>
+              </div>
+              <div className="flex items-center justify-between">
+                <span className="text-zinc-400">Destino:</span>
+                <span className="text-emerald-400 font-medium">Google Drive (Biblioteca)</span>
+              </div>
             </div>
-            <div className="flex items-center justify-between">
-              <span className="text-zinc-400">Plantilla seleccionada:</span>
-              <span className="text-zinc-200 font-mono">{template}</span>
-            </div>
-            <div className="flex items-center justify-between">
-              <span className="text-zinc-400">Formato:</span>
-              <span className="text-zinc-200 font-mono">{aspectRatio}</span>
-            </div>
-          </div>
+          ) : (
+            feedback?.details && (
+              <div className="p-3 rounded-lg bg-red-950/30 border border-red-900/50 text-xs text-red-300 font-mono max-h-36 overflow-y-auto">
+                {feedback.details}
+              </div>
+            )
+          )}
 
-          <DialogFooter className="pt-2">
-            <Button
-              className="w-full bg-zinc-100 hover:bg-zinc-200 text-zinc-950 font-semibold"
-              onClick={() => setShowRenderModal(false)}
-            >
-              Entendido
-            </Button>
+          <DialogFooter className="pt-2 flex flex-col sm:flex-row gap-2">
+            {feedback?.type === "success" ? (
+              <>
+                <Button
+                  variant="outline"
+                  className="w-full sm:w-auto border-zinc-800 text-zinc-300 hover:bg-zinc-900"
+                  onClick={() => setShowResultModal(false)}
+                >
+                  Seguir en el Estudio
+                </Button>
+                <Link href="/library" className="w-full sm:w-auto">
+                  <Button className="w-full bg-zinc-100 hover:bg-zinc-200 text-zinc-950 font-semibold gap-1.5">
+                    Ir a la Biblioteca
+                    <ExternalLink className="h-3.5 w-3.5" />
+                  </Button>
+                </Link>
+              </>
+            ) : (
+              <Button
+                className="w-full bg-zinc-800 hover:bg-zinc-700 text-zinc-100"
+                onClick={() => setShowResultModal(false)}
+              >
+                Cerrar
+              </Button>
+            )}
           </DialogFooter>
         </DialogContent>
       </Dialog>
