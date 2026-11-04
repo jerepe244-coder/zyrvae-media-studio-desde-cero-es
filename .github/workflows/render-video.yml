@@ -1,0 +1,59 @@
+yaml
+name: Render Video
+
+on:
+  workflow_dispatch:
+    inputs:
+      title:
+        description: "Título del video comercial"
+        required: true
+        default: "Comercial ZYRVAE"
+      text:
+        description: "Texto o mensaje principal del video"
+        required: false
+        default: "Potencia tu marca con video de alta conversión"
+      color:
+        description: "Color de acento de marca (Hex)"
+        required: false
+        default: "#6366f1"
+
+jobs:
+  render-and-upload:
+    name: Renderizar y Subir a Google Drive
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout del repositorio
+        uses: actions/checkout@v4
+
+      - name: Instalar Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: 22
+
+      - name: Instalar FFmpeg
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y ffmpeg
+
+      - name: Instalar HyperFrames
+        run: |
+          npm i hyperframes
+
+      - name: Generar el video .mp4
+        run: |
+          node scripts/render-video.mjs
+        env:
+          VIDEO_TITLE: ${{ inputs.title }}
+          VIDEO_TEXT: ${{ inputs.text }}
+          VIDEO_COLOR: ${{ inputs.color }}
+          VIDEO_OUTPUT: output.mp4
+
+      - name: Subir a Google Drive
+        run: |
+          node scripts/upload-to-drive.mjs
+        env:
+          VIDEO_TITLE: ${{ inputs.title }}
+          VIDEO_OUTPUT: output.mp4
+          GOOGLE_CLIENT_EMAIL: ${{ secrets.GOOGLE_CLIENT_EMAIL }}
+          GOOGLE_PRIVATE_KEY: ${{ secrets.GOOGLE_PRIVATE_KEY }}
+          GOOGLE_DRIVE_FOLDER_ID: ${{ secrets.GOOGLE_DRIVE_FOLDER_ID }}
