@@ -16,7 +16,7 @@ const navigationItems = [
     name: "Estudio",
     href: "/studio",
     icon: Clapperboard,
-    description: "Editor y renderizador",
+    description: "Convertidor HTML a Video",
   },
 ]
 
