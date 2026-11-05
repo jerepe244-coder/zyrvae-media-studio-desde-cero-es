@@ -8,48 +8,43 @@ export async function POST(request: Request) {
     const token = rawToken.trim();
 
     const body = await request.json().catch(() => ({}));
-    const { title, html, html_code, duration } = body || {};
+    const { title, props, remotionProps, html, html_code, duration, accentColor } = body || {};
 
-    const rawHtmlContent = (html || html_code || "").trim();
-
-    if (!rawHtmlContent) {
-      return NextResponse.json(
-        {
-          error: "Código HTML requerido",
-          details: "Debes subir un archivo .html o pegar el código HTML del anuncio para convertirlo a video.",
-        },
-        { status: 400 }
-      );
-    }
-
-    // Convertir el HTML a Base64 para pasarlo de manera limpia y segura a GitHub Actions
-    const base64Html = Buffer.from(rawHtmlContent, "utf-8").toString("base64");
-
-    // Límite de payload de GitHub Actions workflow_dispatch es de ~65,535 caracteres
-    if (base64Html.length > 62000) {
-      const sizeKb = (Buffer.byteLength(rawHtmlContent, "utf-8") / 1024).toFixed(1);
-      return NextResponse.json(
-        {
-          error: "Tamaño HTML excedido",
-          details: `El código HTML pesa ${sizeKb} KB. El límite máximo admitido por GitHub Actions es de ~45-50 KB sin comprimir. Si incluye imágenes incrustadas en Base64, reemplázalas por URLs web públicas directas.`,
-        },
-        { status: 413 }
-      );
-    }
-
-    const videoTitle = (title && String(title).trim()) || "Comercial ZYRVAE";
+    const videoTitle = (title && String(title).trim()) || props?.title || "Comercial ZYRVAE";
     const videoDuration = duration ? String(duration).replace(/[^0-9]/g, "") || "10" : "10";
+    const selectedColor = accentColor || props?.accentColor || "#6366f1";
+
+    // Unificar propiedades para Remotion
+    const finalRemotionProps = {
+      title: videoTitle,
+      subtitle: props?.subtitle || "Imprenta de Video Automatizada",
+      description:
+        props?.description ||
+        "Diseño premium de alta conversión con tecnología Remotion para anuncios 9:16 Ultra HD.",
+      brandName: props?.brandName || "ZYRVAE MEDIA STUDIO",
+      accentColor: selectedColor,
+      badgeText: props?.badgeText || "Comercial ZYRVAE",
+      statsValue: props?.statsValue || "+300%",
+      statsLabel: props?.statsLabel || "Conversión de Marca",
+      callToAction: props?.callToAction || "Potencia tu Negocio Hoy",
+      ...(remotionProps || {}),
+      ...(props || {}),
+    };
+
+    // Serializar a Base64 JSON
+    const propsJson = JSON.stringify(finalRemotionProps);
+    const base64Payload = Buffer.from(propsJson, "utf-8").toString("base64");
 
     const githubUrl =
       "https://api.github.com/repos/jerepe244-coder/zyrvae-media-studio-desde-cero-es/actions/workflows/render-video.yml/dispatches";
 
-    // Enviamos el HTML base64 en inputs.text y la duracion en inputs.color
-    // Esto es 100% compatible con el workflow existente en main sin requerir permisos de 'workflow'
+    // Enviamos las props en base64 en inputs.text y la duración en inputs.color
+    // 100% compatible con el workflow render-video.yml en main
     const payload = {
       ref: "main",
       inputs: {
         title: videoTitle,
-        text: base64Html,
+        text: base64Payload,
         color: `${videoDuration}s`,
       },
     };
@@ -81,7 +76,7 @@ export async function POST(request: Request) {
     if (githubResponse.status === 204 || githubResponse.ok) {
       return NextResponse.json({
         success: true,
-        message: "¡Conversión a video MP4 iniciada en GitHub Actions con HyperFrames!",
+        message: "¡Conversión a video MP4 iniciada en GitHub Actions con Remotion!",
         title: videoTitle,
         duration: `${videoDuration}s`,
       });
