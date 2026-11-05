@@ -866,22 +866,37 @@ export default function StudioPage() {
           </DialogHeader>
 
           {feedback?.type === "success" ? (
-            <div className="p-3.5 rounded-lg bg-zinc-900/60 border border-zinc-800/80 space-y-2 text-xs text-zinc-300">
-              <div className="flex items-center justify-between">
-                <span className="text-zinc-400">Título:</span>
-                <span className="text-zinc-200 font-semibold">{videoTitle}</span>
+            <div className="space-y-3">
+              <div className="p-3.5 rounded-lg bg-zinc-900/60 border border-zinc-800/80 space-y-2 text-xs text-zinc-300">
+                <div className="flex items-center justify-between">
+                  <span className="text-zinc-400">Título:</span>
+                  <span className="text-zinc-200 font-semibold">{videoTitle}</span>
+                </div>
+                <div className="flex items-center justify-between">
+                  <span className="text-zinc-400">Duración:</span>
+                  <span className="text-zinc-200 font-mono">{duration}</span>
+                </div>
+                <div className="flex items-center justify-between">
+                  <span className="text-zinc-400">Motor:</span>
+                  <span className="text-zinc-200 font-mono">HyperFrames (GitHub Actions)</span>
+                </div>
+                <div className="flex items-center justify-between">
+                  <span className="text-zinc-400">Destino:</span>
+                  <span className="text-emerald-400 font-medium">Google Drive (Biblioteca)</span>
+                </div>
               </div>
-              <div className="flex items-center justify-between">
-                <span className="text-zinc-400">Duración:</span>
-                <span className="text-zinc-200 font-mono">{duration}</span>
-              </div>
-              <div className="flex items-center justify-between">
-                <span className="text-zinc-400">Motor:</span>
-                <span className="text-zinc-200 font-mono">HyperFrames (GitHub Actions)</span>
-              </div>
-              <div className="flex items-center justify-between">
-                <span className="text-zinc-400">Destino:</span>
-                <span className="text-emerald-400 font-medium">Google Drive (Biblioteca)</span>
+
+              <div className="p-3 rounded-lg bg-zinc-900/40 border border-zinc-800/60 text-xs text-zinc-400">
+                <span>Puedes monitorear el renderizado y la subida en tiempo real: </span>
+                <a
+                  href="https://github.com/jerepe244-coder/zyrvae-media-studio-desde-cero-es/actions/workflows/render-video.yml"
+                  target="_blank"
+                  rel="noopener noreferrer"
+                  className="text-indigo-400 hover:text-indigo-300 underline font-medium inline-flex items-center gap-1 ml-1"
+                >
+                  Ver en GitHub Actions
+                  <ExternalLink className="h-3 w-3" />
+                </a>
               </div>
             </div>
           ) : (

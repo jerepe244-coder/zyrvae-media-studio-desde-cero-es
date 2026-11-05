@@ -1,5 +1,7 @@
 import { NextResponse, connection } from "next/server"
-import { drive } from "@/lib/google"
+import { drive, isGoogleDriveConfigured, getCleanFolderId } from "@/lib/google"
+
+export const dynamic = "force-dynamic"
 
 function formatDate(createdTime?: string | null): string {
   if (!createdTime) return "Fecha no disponible"
@@ -31,17 +33,32 @@ function formatDate(createdTime?: string | null): string {
 export async function GET() {
   await connection()
   try {
-    const folderId = process.env.GOOGLE_DRIVE_FOLDER_ID
-    if (!folderId) {
-      console.warn("GOOGLE_DRIVE_FOLDER_ID no está configurada")
-      return NextResponse.json([])
+    const configured = isGoogleDriveConfigured()
+    const folderId = getCleanFolderId()
+
+    if (!configured) {
+      return NextResponse.json({
+        configured: false,
+        folderConfigured: Boolean(folderId),
+        videos: [],
+        message:
+          "Las credenciales de Google Drive no están configuradas en las variables de entorno de este despliegue (GOOGLE_CLIENT_EMAIL y GOOGLE_PRIVATE_KEY).",
+      })
+    }
+
+    // Si hay folderId, buscar dentro de la carpeta; si no, buscar videos en la raíz
+    let q = "mimeType contains 'video/' and trashed = false"
+    if (folderId) {
+      q = `'${folderId}' in parents and mimeType contains 'video/' and trashed = false`
     }
 
     const response = await drive.files.list({
-      q: `'${folderId}' in parents and mimeType contains 'video/' and trashed = false`,
+      q,
       fields: "files(id, name, createdTime, webViewLink, thumbnailLink)",
       supportsAllDrives: true,
       includeItemsFromAllDrives: true,
+      orderBy: "createdTime desc",
+      pageSize: 50,
     })
 
     const files = response.data.files || []
@@ -53,11 +70,21 @@ export async function GET() {
       date: formatDate(file.createdTime),
     }))
 
-    return NextResponse.json(videos)
+    return NextResponse.json({
+      configured: true,
+      folderConfigured: Boolean(folderId),
+      folderId: folderId || null,
+      videos,
+    })
   } catch (error) {
     console.error("Error al obtener videos de Google Drive:", error)
     return NextResponse.json(
-      { error: "Error al obtener videos de Google Drive", details: error instanceof Error ? error.message : String(error) },
+      {
+        error: "Error al obtener videos de Google Drive",
+        details: error instanceof Error ? error.message : String(error),
+        videos: [],
+        configured: isGoogleDriveConfigured(),
+      },
       { status: 500 }
     )
   }

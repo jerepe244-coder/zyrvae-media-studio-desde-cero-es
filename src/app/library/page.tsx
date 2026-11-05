@@ -11,7 +11,10 @@ import {
   Sparkles,
   ArrowRight,
   RefreshCw,
-  FolderOpen
+  FolderOpen,
+  ExternalLink,
+  AlertTriangle,
+  CheckCircle2,
 } from "lucide-react"
 
 import { Button } from "@/components/ui/button"
@@ -45,6 +48,16 @@ interface DriveVideo {
   date: string
 }
 
+interface DriveApiResponse {
+  configured?: boolean
+  folderConfigured?: boolean
+  folderId?: string | null
+  videos?: DriveVideo[]
+  error?: string
+  details?: string
+  message?: string
+}
+
 const GRADIENT_PALETTES = [
   "from-emerald-500/20 via-zinc-900 to-zinc-950",
   "from-purple-500/20 via-zinc-900 to-zinc-950",
@@ -57,46 +70,42 @@ const GRADIENT_PALETTES = [
 export default function LibraryPage() {
   const [videos, setVideos] = React.useState<DriveVideo[]>([])
   const [loading, setLoading] = React.useState(true)
+  const [isRefreshing, setIsRefreshing] = React.useState(false)
+  const [driveConfig, setDriveConfig] = React.useState<DriveApiResponse | null>(null)
   const [filter, setFilter] = React.useState<"all" | VideoStatus>("all")
   const [search, setSearch] = React.useState("")
   const [isDialogOpen, setIsDialogOpen] = React.useState(false)
   const [newVideoTitle, setNewVideoTitle] = React.useState("")
   const [newVideoTemplate, setNewVideoTemplate] = React.useState("Comercial ZYRVAE")
 
-  React.useEffect(() => {
-    let ignore = false
+  const loadVideos = React.useCallback(async (isManualRefresh = false) => {
+    if (isManualRefresh) setIsRefreshing(true)
+    try {
+      const res = await fetch("/api/videos")
+      const data: DriveApiResponse | DriveVideo[] = await res.json()
 
-    async function loadVideos() {
-      try {
-        const res = await fetch("/api/videos")
-        if (!res.ok) {
-          throw new Error("Error fetching videos")
-        }
-        const data = await res.json()
-        if (!ignore) {
-          setVideos(Array.isArray(data) ? data : data.videos || [])
-        }
-      } catch (err) {
-        console.error("Error al cargar videos:", err)
-        if (!ignore) {
-          setVideos([])
-        }
-      } finally {
-        if (!ignore) {
-          setLoading(false)
-        }
+      if (Array.isArray(data)) {
+        setVideos(data)
+        setDriveConfig({ configured: true, videos: data })
+      } else {
+        setDriveConfig(data)
+        setVideos(data.videos || [])
       }
-    }
-
-    loadVideos()
-    return () => {
-      ignore = true
+    } catch (err) {
+      console.error("Error al cargar videos:", err)
+      setVideos([])
+    } finally {
+      setLoading(false)
+      if (isManualRefresh) setIsRefreshing(false)
     }
   }, [])
 
+  React.useEffect(() => {
+    loadVideos()
+  }, [loadVideos])
+
   const filteredVideos = React.useMemo(() => {
     return videos.filter((video) => {
-      // Como ya no hay base de datos, todos los videos de Drive tienen estado "En Drive"
       const matchesFilter = filter === "all" || filter === "En Drive"
       const matchesSearch =
         video.title.toLowerCase().includes(search.toLowerCase())
@@ -148,123 +157,143 @@ export default function LibraryPage() {
           </p>
         </div>
 
-        {/* Top Right Button: + Nuevo Video with Modal Dialog */}
-        <Dialog open={isDialogOpen} onOpenChange={setIsDialogOpen}>
-          <DialogTrigger asChild>
-            <Button
-              className="w-full md:w-auto shadow-lg shadow-white/5 bg-zinc-50 hover:bg-zinc-200 text-zinc-950 font-medium gap-2"
-              size="default"
-            >
-              <Plus className="h-4 w-4" />
-              + Nuevo Video
-            </Button>
-          </DialogTrigger>
+        {/* Action Buttons: Refresh + Nuevo Video */}
+        <div className="flex items-center gap-2.5 w-full md:w-auto">
+          <Button
+            variant="outline"
+            size="default"
+            onClick={() => loadVideos(true)}
+            disabled={loading || isRefreshing}
+            className="border-zinc-800 text-zinc-300 hover:bg-zinc-900 gap-2 text-xs"
+            title="Sincronizar con Google Drive"
+          >
+            <RefreshCw className={`h-3.5 w-3.5 ${isRefreshing ? "animate-spin text-emerald-400" : ""}`} />
+            Sincronizar
+          </Button>
 
-          <DialogContent className="sm:max-w-md bg-zinc-950 border-zinc-800">
-            <DialogHeader>
-              <DialogTitle className="flex items-center gap-2 text-zinc-100">
-                <Sparkles className="h-5 w-5 text-zinc-300" />
-                Crear Nuevo Video
-              </DialogTitle>
-              <DialogDescription className="text-zinc-400">
-                Inicia un nuevo proyecto comercial para configurar en el Estudio.
-              </DialogDescription>
-            </DialogHeader>
-
-            <div className="space-y-4 py-2">
-              <div className="space-y-1.5">
-                <label className="text-xs font-semibold text-zinc-300">
-                  Nombre del video
-                </label>
-                <Input
-                  placeholder="Ej: Comercial La Fresque 2026"
-                  value={newVideoTitle}
-                  onChange={(e) => setNewVideoTitle(e.target.value)}
-                  className="bg-zinc-900/80 border-zinc-800"
-                />
-              </div>
-
-              <div className="space-y-1.5">
-                <label className="text-xs font-semibold text-zinc-300">
-                  Plantilla inicial
-                </label>
-                <Select
-                  value={newVideoTemplate}
-                  onValueChange={setNewVideoTemplate}
-                >
-                  <SelectTrigger className="bg-zinc-900/80 border-zinc-800">
-                    <SelectValue placeholder="Selecciona plantilla" />
-                  </SelectTrigger>
-                  <SelectContent>
-                    <SelectItem value="Comercial ZYRVAE">Comercial ZYRVAE</SelectItem>
-                    <SelectItem value="Caso de Éxito">Caso de Éxito</SelectItem>
-                    <SelectItem value="Reel">Reel</SelectItem>
-                  </SelectContent>
-                </Select>
-              </div>
-            </div>
-
-            <DialogFooter className="flex-col sm:flex-row gap-2">
+          <Dialog open={isDialogOpen} onOpenChange={setIsDialogOpen}>
+            <DialogTrigger asChild>
               <Button
-                variant="outline"
-                onClick={() => setIsDialogOpen(false)}
-                className="w-full sm:w-auto border-zinc-800 text-zinc-300 hover:bg-zinc-900"
+                className="w-full md:w-auto shadow-lg shadow-white/5 bg-zinc-50 hover:bg-zinc-200 text-zinc-950 font-medium gap-2 text-xs"
+                size="default"
               >
-                Cancelar
+                <Plus className="h-4 w-4" />
+                + Nuevo Video
               </Button>
-              <Link href="/studio" className="w-full sm:w-auto">
+            </DialogTrigger>
+
+            <DialogContent className="sm:max-w-md bg-zinc-950 border-zinc-800">
+              <DialogHeader>
+                <DialogTitle className="flex items-center gap-2 text-zinc-100">
+                  <Sparkles className="h-5 w-5 text-zinc-300" />
+                  Crear Nuevo Video
+                </DialogTitle>
+                <DialogDescription className="text-zinc-400">
+                  Inicia un nuevo proyecto comercial para configurar en el Estudio.
+                </DialogDescription>
+              </DialogHeader>
+
+              <div className="space-y-4 py-2">
+                <div className="space-y-1.5">
+                  <label className="text-xs font-semibold text-zinc-300">
+                    Nombre del video
+                  </label>
+                  <Input
+                    placeholder="Ej: Comercial La Fresque 2026"
+                    value={newVideoTitle}
+                    onChange={(e) => setNewVideoTitle(e.target.value)}
+                    className="bg-zinc-900/80 border-zinc-800"
+                  />
+                </div>
+
+                <div className="space-y-1.5">
+                  <label className="text-xs font-semibold text-zinc-300">
+                    Plantilla inicial
+                  </label>
+                  <Select
+                    value={newVideoTemplate}
+                    onValueChange={setNewVideoTemplate}
+                  >
+                    <SelectTrigger className="bg-zinc-900/80 border-zinc-800">
+                      <SelectValue placeholder="Selecciona plantilla" />
+                    </SelectTrigger>
+                    <SelectContent>
+                      <SelectItem value="Comercial ZYRVAE">Comercial ZYRVAE</SelectItem>
+                      <SelectItem value="Caso de Éxito">Caso de Éxito</SelectItem>
+                      <SelectItem value="Lanzamiento Producto">Lanzamiento Producto</SelectItem>
+                    </SelectContent>
+                  </Select>
+                </div>
+              </div>
+
+              <DialogFooter className="gap-2 sm:gap-0">
                 <Button
-                  className="w-full bg-zinc-100 hover:bg-zinc-200 text-zinc-950 font-medium"
+                  variant="outline"
                   onClick={() => setIsDialogOpen(false)}
+                  className="border-zinc-800 hover:bg-zinc-900 text-zinc-300"
                 >
-                  Ir al Estudio
-                  <ArrowRight className="ml-1.5 h-4 w-4" />
+                  Cancelar
                 </Button>
-              </Link>
-            </DialogFooter>
-          </DialogContent>
-        </Dialog>
+                <Link
+                  href={`/studio?title=${encodeURIComponent(newVideoTitle || newVideoTemplate)}`}
+                  className="inline-flex"
+                >
+                  <Button
+                    className="bg-zinc-100 hover:bg-zinc-200 text-zinc-950 font-semibold gap-1.5"
+                    onClick={() => setIsDialogOpen(false)}
+                  >
+                    Abrir en Estudio
+                    <ArrowRight className="h-4 w-4" />
+                  </Button>
+                </Link>
+              </DialogFooter>
+            </DialogContent>
+          </Dialog>
+        </div>
       </div>
 
+      {/* Diagnostic banner if Google Drive is not configured */}
+      {driveConfig?.configured === false && (
+        <div className="p-4 rounded-xl border border-amber-900/60 bg-amber-950/20 text-amber-200 text-xs space-y-2">
+          <div className="flex items-center gap-2 font-semibold text-amber-100">
+            <AlertTriangle className="h-4 w-4 text-amber-400" />
+            Configuración de Google Drive pendiente en el servidor
+          </div>
+          <p className="text-amber-300/90 leading-relaxed">
+            Para que los videos renderizados aparezcan en tu Biblioteca y se sincronicen con Google Drive, asegúrate de configurar las credenciales en Vercel y en GitHub Actions.
+          </p>
+          <div className="pt-1 flex flex-wrap items-center gap-3 font-mono text-[11px] text-amber-400">
+            <span>• GOOGLE_CLIENT_EMAIL</span>
+            <span>• GOOGLE_PRIVATE_KEY</span>
+            <span>• GOOGLE_DRIVE_FOLDER_ID</span>
+          </div>
+        </div>
+      )}
+
       {/* Filters and Search Bar */}
-      <div className="flex flex-col sm:flex-row gap-3 sm:items-center sm:justify-between">
-        {/* Filter Pills */}
-        <div className="flex items-center gap-1.5 overflow-x-auto pb-1 sm:pb-0">
-          <Button
-            variant={filter === "all" ? "secondary" : "ghost"}
-            size="sm"
+      <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4">
+        {/* Status Filter Tabs */}
+        <div className="flex items-center gap-1.5 bg-zinc-900/50 p-1 rounded-lg border border-zinc-800/80 w-fit">
+          <button
             onClick={() => setFilter("all")}
-            className="text-xs h-8 rounded-lg"
+            className={`px-3 py-1.5 rounded-md text-xs font-medium transition-all ${
+              filter === "all"
+                ? "bg-zinc-800 text-zinc-100 shadow-sm"
+                : "text-zinc-400 hover:text-zinc-200"
+            }`}
           >
             Todos ({videos.length})
-          </Button>
-          <Button
-            variant={filter === "En Drive" ? "secondary" : "ghost"}
-            size="sm"
+          </button>
+          <button
             onClick={() => setFilter("En Drive")}
-            className="text-xs h-8 rounded-lg gap-1.5"
+            className={`px-3 py-1.5 rounded-md text-xs font-medium transition-all ${
+              filter === "En Drive"
+                ? "bg-zinc-800 text-zinc-100 shadow-sm"
+                : "text-zinc-400 hover:text-zinc-200"
+            }`}
           >
-            <span className="w-1.5 h-1.5 rounded-full bg-emerald-400" />
             En Drive ({videos.length})
-          </Button>
-          <Button
-            variant={filter === "Renderizando" ? "secondary" : "ghost"}
-            size="sm"
-            onClick={() => setFilter("Renderizando")}
-            className="text-xs h-8 rounded-lg gap-1.5"
-          >
-            <span className="w-1.5 h-1.5 rounded-full bg-amber-400" />
-            Renderizando (0)
-          </Button>
-          <Button
-            variant={filter === "Borrador" ? "secondary" : "ghost"}
-            size="sm"
-            onClick={() => setFilter("Borrador")}
-            className="text-xs h-8 rounded-lg gap-1.5"
-          >
-            <span className="w-1.5 h-1.5 rounded-full bg-zinc-500" />
-            Borradores (0)
-          </Button>
+          </button>
         </div>
 
         {/* Search Input */}
@@ -285,25 +314,62 @@ export default function LibraryPage() {
           <p className="text-sm text-zinc-400">Cargando videos desde Google Drive...</p>
         </div>
       ) : videos.length === 0 ? (
-        /* Empty State */
-        <div className="flex flex-col items-center justify-center p-12 md:p-16 text-center rounded-2xl border border-dashed border-zinc-800 bg-zinc-950/40 my-4">
-          <div className="w-14 h-14 rounded-2xl bg-zinc-900/80 border border-zinc-800 flex items-center justify-center mb-4 text-zinc-400 shadow-inner">
+        /* Empty State with Actionable Guidance */
+        <div className="flex flex-col items-center justify-center p-12 md:p-16 text-center rounded-2xl border border-dashed border-zinc-800 bg-zinc-950/40 my-4 space-y-4">
+          <div className="w-14 h-14 rounded-2xl bg-zinc-900/80 border border-zinc-800 flex items-center justify-center text-zinc-400 shadow-inner">
             <FolderOpen className="h-7 w-7 text-zinc-500" />
           </div>
-          <h3 className="text-lg font-semibold text-zinc-200 mb-1">
-            No hay videos en Drive aún
-          </h3>
-          <p className="text-sm text-zinc-400 max-w-sm mb-6">
-            Los videos .mp4 sincronizados en tu carpeta de Google Drive aparecerán automáticamente aquí.
-          </p>
-          <Button
-            onClick={() => setIsDialogOpen(true)}
-            className="shadow-lg shadow-white/5 bg-zinc-50 hover:bg-zinc-200 text-zinc-950 font-medium gap-2"
-            size="default"
-          >
-            <Plus className="h-4 w-4" />
-            + Nuevo Video
-          </Button>
+          <div>
+            <h3 className="text-lg font-semibold text-zinc-200 mb-1">
+              No hay videos en Drive aún
+            </h3>
+            <p className="text-xs text-zinc-400 max-w-md mx-auto leading-relaxed">
+              Los videos renderizados con HyperFrames se suben automáticamente a tu carpeta de Google Drive.
+            </p>
+          </div>
+
+          <div className="p-3.5 rounded-lg bg-zinc-900/50 border border-zinc-800/80 text-left text-xs text-zinc-300 max-w-md w-full space-y-2">
+            <div className="font-semibold text-zinc-200 flex items-center gap-1.5">
+              <CheckCircle2 className="h-3.5 w-3.5 text-emerald-400" />
+              ¿Acabas de renderizar un video?
+            </div>
+            <p className="text-zinc-400 text-[11px] leading-relaxed">
+              1. El proceso toma alrededor de <strong>1 a 2 minutos</strong> en GitHub Actions.<br />
+              2. Una vez completado, haz clic en el botón <strong>&quot;Sincronizar&quot;</strong> arriba para actualizar la lista.<br />
+              3. Puedes ver el estado de la tarea en tiempo real en GitHub Actions.
+            </p>
+            <div className="pt-1">
+              <a
+                href="https://github.com/jerepe244-coder/zyrvae-media-studio-desde-cero-es/actions/workflows/render-video.yml"
+                target="_blank"
+                rel="noopener noreferrer"
+                className="inline-flex items-center gap-1 text-[11px] text-indigo-400 hover:text-indigo-300 underline font-medium"
+              >
+                Ver ejecuciones en GitHub Actions
+                <ExternalLink className="h-3 w-3" />
+              </a>
+            </div>
+          </div>
+
+          <div className="pt-2 flex flex-wrap items-center justify-center gap-3">
+            <Button
+              onClick={() => setIsDialogOpen(true)}
+              className="shadow-lg shadow-white/5 bg-zinc-50 hover:bg-zinc-200 text-zinc-950 font-medium gap-2 text-xs"
+              size="default"
+            >
+              <Plus className="h-4 w-4" />
+              + Crear Video en Estudio
+            </Button>
+            <Button
+              variant="outline"
+              onClick={() => loadVideos(true)}
+              disabled={isRefreshing}
+              className="border-zinc-800 text-zinc-300 hover:bg-zinc-900 gap-2 text-xs"
+            >
+              <RefreshCw className={`h-3.5 w-3.5 ${isRefreshing ? "animate-spin text-emerald-400" : ""}`} />
+              Sincronizar Ahora
+            </Button>
+          </div>
         </div>
       ) : filteredVideos.length === 0 ? (
         /* Search or Filter No Results */
@@ -349,7 +415,6 @@ export default function LibraryPage() {
                             referrerPolicy="no-referrer"
                             className="absolute inset-0 w-full h-full object-cover group-hover:scale-105 transition-transform duration-300"
                             onError={(e) => {
-                              // Ocultar si falla para dejar el gradiente de fondo
                               ;(e.currentTarget as HTMLElement).style.display = "none"
                             }}
                           />
@@ -434,18 +499,34 @@ export default function LibraryPage() {
                       </CardContent>
                     </div>
 
-                    {/* Card Action Footer */}
-                    <div className="px-4 pb-4 pt-1 flex items-center gap-2 border-t border-zinc-800/40">
-                      <Link href="/studio" className="w-full">
+                    {/* Bottom Action Footer */}
+                    <div className="px-4 pb-4 pt-1 border-t border-zinc-800/40 flex items-center justify-between gap-2">
+                      {video.driveLink ? (
+                        <a
+                          href={video.driveLink}
+                          target="_blank"
+                          rel="noopener noreferrer"
+                          className="w-full"
+                        >
+                          <Button
+                            variant="outline"
+                            size="sm"
+                            className="w-full text-xs font-medium border-zinc-800 hover:bg-zinc-800 hover:text-zinc-100 transition-colors gap-1.5"
+                          >
+                            Ver en Google Drive
+                            <ExternalLink className="h-3 w-3" />
+                          </Button>
+                        </a>
+                      ) : (
                         <Button
                           variant="outline"
                           size="sm"
-                          className="w-full text-xs font-medium border-zinc-800 bg-zinc-900/60 hover:bg-zinc-800 text-zinc-300 hover:text-white justify-between group/btn"
+                          disabled
+                          className="w-full text-xs font-medium border-zinc-800 text-zinc-500 gap-1.5"
                         >
-                          <span>Abrir en Estudio</span>
-                          <ArrowRight className="h-3 w-3 text-zinc-400 group-hover/btn:translate-x-0.5 transition-transform" />
+                          Enlace no disponible
                         </Button>
-                      </Link>
+                      )}
                     </div>
                   </Card>
                 </motion.div>

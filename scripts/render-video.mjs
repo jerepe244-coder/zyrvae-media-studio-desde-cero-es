@@ -2,18 +2,34 @@ import fs from "node:fs";
 import path from "node:path";
 import { execSync } from "node:child_process";
 
-// 1. Obtener parámetros del entorno
+// 1. Obtener y validar parámetros del entorno
 const rawTitle = process.env.VIDEO_TITLE || "Comercial ZYRVAE";
 
-// Duración: puede venir de VIDEO_DURATION o de VIDEO_COLOR (ej: "10s" o "15")
-let durationInput = parseInt(process.env.VIDEO_DURATION || "", 10);
-if (isNaN(durationInput) && process.env.VIDEO_COLOR) {
-  const parsedFromColor = parseInt(process.env.VIDEO_COLOR.replace(/[^0-9]/g, ""), 10);
-  if (!isNaN(parsedFromColor) && parsedFromColor > 0) {
-    durationInput = parsedFromColor;
+// Duración y Color: parsing robusto
+// Evita el bug donde un color hex como #6366f1 se convertía en 63661 segundos (17 horas)
+let duration = 10;
+let accentColor = "#6366f1";
+
+if (process.env.VIDEO_DURATION) {
+  const parsed = parseInt(String(process.env.VIDEO_DURATION).replace(/[^0-9]/g, ""), 10);
+  if (!isNaN(parsed) && parsed > 0 && parsed <= 120) {
+    duration = parsed;
   }
 }
-const duration = isNaN(durationInput) || durationInput <= 0 ? 10 : durationInput;
+
+if (process.env.VIDEO_COLOR) {
+  const rawColor = String(process.env.VIDEO_COLOR).trim();
+  if (rawColor.startsWith("#") && /^#[0-9a-fA-F]{3,8}$/.test(rawColor)) {
+    accentColor = rawColor;
+  } else {
+    // Si vino como "10s", "15s" o "15" en VIDEO_COLOR
+    const parsed = parseInt(rawColor.replace(/[^0-9]/g, ""), 10);
+    if (!isNaN(parsed) && parsed > 0 && parsed <= 120) {
+      duration = parsed;
+    }
+  }
+}
+
 const outputMp4 = process.env.VIDEO_OUTPUT || path.join(process.cwd(), "output.mp4");
 
 // 2. Obtener y decodificar el código HTML
@@ -33,7 +49,7 @@ if (!rawHtml && process.env.HTML_CODE && process.env.HTML_CODE.trim()) {
   rawHtml = process.env.HTML_CODE.trim();
 }
 
-// C. Desde VIDEO_TEXT (compatibilidad total con el workflow existente en main)
+// C. Desde VIDEO_TEXT (compatibilidad total con el workflow existente)
 if (!rawHtml && process.env.VIDEO_TEXT && process.env.VIDEO_TEXT.trim()) {
   const candidate = process.env.VIDEO_TEXT.trim();
   // Probar si viene codificado en base64
@@ -66,7 +82,7 @@ if (!rawHtml && process.env.VIDEO_TEXT && process.env.VIDEO_TEXT.trim()) {
   }
 }
 
-// Plantilla de fallback si no se proporciona HTML
+// Plantilla de demostración ZYRVAE si no se proporcionó HTML específico
 if (!rawHtml) {
   console.log("No se proporcionó HTML específico. Usando plantilla de demostración ZYRVAE.");
   rawHtml = `<!doctype html>
@@ -80,19 +96,19 @@ if (!rawHtml) {
     body, html { width: 1080px; height: 1920px; overflow: hidden; background-color: #09090b; color: #fafafa; }
     #root { position: relative; width: 1080px; height: 1920px; display: flex; flex-direction: column; justify-content: space-between; padding: 120px 80px; background: radial-gradient(circle at 50% 30%, #1e1b4b 0%, #09090b 70%); }
     .badge { display: inline-flex; align-items: center; gap: 12px; padding: 14px 28px; border-radius: 9999px; background: rgba(24, 24, 27, 0.85); border: 1px solid rgba(255, 255, 255, 0.15); width: fit-content; }
-    .badge-dot { width: 14px; height: 14px; border-radius: 50%; background-color: #6366f1; box-shadow: 0 0 16px #6366f1; }
+    .badge-dot { width: 14px; height: 14px; border-radius: 50%; background-color: ${accentColor}; box-shadow: 0 0 16px ${accentColor}; }
     .badge-text { font-size: 24px; font-weight: 700; letter-spacing: 0.15em; text-transform: uppercase; color: #e4e4e7; }
     .content { display: flex; flex-direction: column; gap: 32px; margin: auto 0; }
-    .accent { width: 120px; height: 8px; border-radius: 4px; background: #6366f1; box-shadow: 0 0 24px #6366f1; }
+    .accent { width: 120px; height: 8px; border-radius: 4px; background: ${accentColor}; box-shadow: 0 0 24px ${accentColor}; }
     .title { font-size: 80px; font-weight: 800; line-height: 1.08; letter-spacing: -0.04em; color: #ffffff; }
     .desc { font-size: 36px; line-height: 1.4; color: #a1a1aa; max-width: 900px; }
     .footer { display: flex; flex-direction: column; gap: 20px; }
     .progress-track { width: 100%; height: 6px; background: rgba(255, 255, 255, 0.1); border-radius: 3px; overflow: hidden; }
-    .progress-fill { height: 100%; width: 0%; background: #6366f1; box-shadow: 0 0 16px #6366f1; }
+    .progress-fill { height: 100%; width: 0%; background: ${accentColor}; box-shadow: 0 0 16px ${accentColor}; }
     .labels { display: flex; justify-content: space-between; font-size: 22px; color: #71717a; text-transform: uppercase; font-weight: 600; letter-spacing: 0.05em; }
   </style>
 </head>
-<body data-composition-id="main" data-duration="10" data-width="1080" data-height="1920" data-fps="30">
+<body data-composition-id="main" data-duration="${duration}" data-width="1080" data-height="1920" data-fps="30">
   <div id="root">
     <div class="badge">
       <span class="badge-dot"></span>
@@ -110,7 +126,7 @@ if (!rawHtml) {
   </div>
   <script>
     const tl = gsap.timeline({ paused: true });
-    tl.to("#progress", { width: "100%", duration: 10, ease: "none" }, 0);
+    tl.to("#progress", { width: "100%", duration: ${duration}, ease: "none" }, 0);
     window.__timelines = { main: tl };
   </script>
 </body>
@@ -146,7 +162,6 @@ function prepareCompositionHtml(htmlString, targetDuration) {
 
   const hasTimelines = html.includes("window.__timelines");
   const hasCompositionId = html.includes("data-composition-id");
-  const hasDuration = html.includes("data-duration");
   const hasNoTimeline = html.includes("data-no-timeline");
 
   // Si no tiene data-composition-id en ningún elemento, agregarlo al <body>
@@ -155,20 +170,27 @@ function prepareCompositionHtml(htmlString, targetDuration) {
       html = html.replace(/<body([^>]*)>/i, (match, attrs) => {
         let newAttrs = attrs;
         newAttrs += ` data-composition-id="main"`;
-        if (!hasDuration) {
-          newAttrs += ` data-duration="${targetDuration}"`;
-        }
+        newAttrs += ` data-duration="${targetDuration}"`;
         newAttrs += ` data-width="1080" data-height="1920" data-fps="30"`;
         if (!hasTimelines && !hasNoTimeline) {
-          // Evita esperar el timeout de 45 segundos de timelines si no se usa window.__timelines
           newAttrs += ` data-no-timeline`;
         }
         return `<body${newAttrs}>`;
       });
     }
-  } else if (!hasTimelines && !hasNoTimeline) {
-    // Si tiene data-composition-id pero no tiene timeline ni data-no-timeline
-    html = html.replace(/(data-composition-id=["'][^"']+["'])/i, `$1 data-no-timeline`);
+  } else {
+    // Si ya tiene data-composition-id, asegurar que la duración sea razonable (máximo 120s)
+    html = html.replace(/data-duration=["'](\d+)["']/i, (match, dStr) => {
+      const d = parseInt(dStr, 10);
+      if (isNaN(d) || d > 120 || d <= 0) {
+        return `data-duration="${targetDuration}"`;
+      }
+      return match;
+    });
+
+    if (!hasTimelines && !hasNoTimeline) {
+      html = html.replace(/(data-composition-id=["'][^"']+["'])/i, `$1 data-no-timeline`);
+    }
   }
 
   return html;
@@ -178,7 +200,7 @@ const finalHtml = prepareCompositionHtml(rawHtml, duration);
 
 console.log("=== INICIANDO MOTOR DE RENDERIZADO HYPERFRAMES (CONVERTIDOR HTML -> VIDEO) ===");
 console.log(`Título: "${rawTitle}"`);
-console.log(`Duración: ${duration}s`);
+console.log(`Duración acotada: ${duration}s`);
 console.log(`Tamaño HTML recibido: ${(Buffer.byteLength(finalHtml, 'utf-8') / 1024).toFixed(1)} KB`);
 console.log(`Destino MP4: ${outputMp4}`);
 
