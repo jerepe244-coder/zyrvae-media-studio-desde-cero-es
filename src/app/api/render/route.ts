@@ -8,43 +8,52 @@ export async function POST(request: Request) {
     const token = rawToken.trim();
 
     const body = await request.json().catch(() => ({}));
-    const { title, props, remotionProps, html, html_code, duration, accentColor } = body || {};
+    const { mode, html, html_code, title, props, remotionProps, duration, accentColor } = body || {};
 
     const videoTitle = (title && String(title).trim()) || props?.title || "Comercial ZYRVAE";
     const videoDuration = duration ? String(duration).replace(/[^0-9]/g, "") || "10" : "10";
     const selectedColor = accentColor || props?.accentColor || "#6366f1";
 
-    // Unificar propiedades para Remotion
-    const finalRemotionProps = {
-      title: videoTitle,
-      subtitle: props?.subtitle || "Imprenta de Video Automatizada",
-      description:
-        props?.description ||
-        "Diseño premium de alta conversión con tecnología Remotion para anuncios 9:16 Ultra HD.",
-      brandName: props?.brandName || "ZYRVAE MEDIA STUDIO",
-      accentColor: selectedColor,
-      badgeText: props?.badgeText || "Comercial ZYRVAE",
-      statsValue: props?.statsValue || "+300%",
-      statsLabel: props?.statsLabel || "Conversión de Marca",
-      callToAction: props?.callToAction || "Potencia tu Negocio Hoy",
-      ...(remotionProps || {}),
-      ...(props || {}),
-    };
+    let payloadText = "";
 
-    // Serializar a Base64 JSON
-    const propsJson = JSON.stringify(finalRemotionProps);
-    const base64Payload = Buffer.from(propsJson, "utf-8").toString("base64");
+    // Determinar si la orden es de conversión de código HTML o plantilla Remotion
+    if (mode === "html" || (html && String(html).trim())) {
+      const htmlPayload = {
+        mode: "html",
+        html: String(html || html_code || "").trim(),
+        title: videoTitle,
+      };
+      payloadText = Buffer.from(JSON.stringify(htmlPayload), "utf-8").toString("base64");
+    } else {
+      // Unificar propiedades para Remotion
+      const finalRemotionProps = {
+        title: videoTitle,
+        subtitle: props?.subtitle || "Imprenta de Video Automatizada",
+        description:
+          props?.description ||
+          "Diseño premium de alta conversión con tecnología Remotion para anuncios 9:16 Ultra HD.",
+        brandName: props?.brandName || "ZYRVAE MEDIA STUDIO",
+        accentColor: selectedColor,
+        badgeText: props?.badgeText || "Comercial ZYRVAE",
+        statsValue: props?.statsValue || "+300%",
+        statsLabel: props?.statsLabel || "Conversión de Marca",
+        callToAction: props?.callToAction || "Potencia tu Negocio Hoy",
+        ...(remotionProps || {}),
+        ...(props || {}),
+      };
+      payloadText = Buffer.from(JSON.stringify(finalRemotionProps), "utf-8").toString("base64");
+    }
 
     const githubUrl =
       "https://api.github.com/repos/jerepe244-coder/zyrvae-media-studio-desde-cero-es/actions/workflows/render-video.yml/dispatches";
 
-    // Enviamos las props en base64 en inputs.text y la duración en inputs.color
+    // Enviamos el payload base64 en inputs.text y la duración en inputs.color
     // 100% compatible con el workflow render-video.yml en main
     const payload = {
       ref: "main",
       inputs: {
         title: videoTitle,
-        text: base64Payload,
+        text: payloadText,
         color: `${videoDuration}s`,
       },
     };
@@ -76,9 +85,13 @@ export async function POST(request: Request) {
     if (githubResponse.status === 204 || githubResponse.ok) {
       return NextResponse.json({
         success: true,
-        message: "¡Conversión a video MP4 iniciada en GitHub Actions con Remotion!",
+        message:
+          mode === "html" || html
+            ? "¡Conversión de HTML a video MP4 iniciada con éxito en GitHub Actions!"
+            : "¡Conversión a video MP4 iniciada en GitHub Actions con Remotion!",
         title: videoTitle,
         duration: `${videoDuration}s`,
+        engine: mode === "html" || html ? "HyperFrames (HTML -> MP4)" : "Remotion",
       });
     }
 

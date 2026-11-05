@@ -20,7 +20,7 @@ export function AppLayout({ children }: { children: React.ReactNode }) {
       <MobileHeader />
 
       {/* Main Content Area */}
-      <main className="relative z-10 flex-1 md:pl-64 pb-24 md:pb-12 transition-all">
+      <main className="relative z-10 flex-1 md:pl-64 pb-[calc(5rem+env(safe-area-inset-bottom,0px))] md:pb-12 transition-all overflow-x-hidden">
         {children}
       </main>
 

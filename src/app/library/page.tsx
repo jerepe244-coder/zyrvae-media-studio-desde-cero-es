@@ -80,12 +80,39 @@ export default function LibraryPage() {
   const [newVideoTitle, setNewVideoTitle] = React.useState("")
   const [newVideoTemplate, setNewVideoTemplate] = React.useState("Comercial ZYRVAE")
 
-  const loadVideos = React.useCallback(async (isManualRefresh = false) => {
-    if (isManualRefresh) setIsRefreshing(true)
+  React.useEffect(() => {
+    let ignore = false
+    const fetchVideos = async () => {
+      try {
+        const res = await fetch("/api/videos")
+        const data: DriveApiResponse | DriveVideo[] = await res.json()
+        if (!ignore) {
+          if (Array.isArray(data)) {
+            setVideos(data)
+            setDriveConfig({ configured: true, videos: data })
+          } else {
+            setDriveConfig(data)
+            setVideos(data.videos || [])
+          }
+        }
+      } catch (err) {
+        console.error("Error al cargar videos:", err)
+        if (!ignore) setVideos([])
+      } finally {
+        if (!ignore) setLoading(false)
+      }
+    }
+    fetchVideos()
+    return () => {
+      ignore = true
+    }
+  }, [])
+
+  const handleManualRefresh = async () => {
+    setIsRefreshing(true)
     try {
       const res = await fetch("/api/videos")
       const data: DriveApiResponse | DriveVideo[] = await res.json()
-
       if (Array.isArray(data)) {
         setVideos(data)
         setDriveConfig({ configured: true, videos: data })
@@ -97,14 +124,9 @@ export default function LibraryPage() {
       console.error("Error al cargar videos:", err)
       setVideos([])
     } finally {
-      setLoading(false)
-      if (isManualRefresh) setIsRefreshing(false)
+      setIsRefreshing(false)
     }
-  }, [])
-
-  React.useEffect(() => {
-    loadVideos()
-  }, [loadVideos])
+  }
 
   const filteredVideos = React.useMemo(() => {
     return videos.filter((video) => {
@@ -142,31 +164,31 @@ export default function LibraryPage() {
   }
 
   return (
-    <div className="p-6 md:p-10 max-w-7xl mx-auto space-y-8">
+    <div className="px-4 py-5 sm:p-6 md:p-10 max-w-7xl mx-auto space-y-6 md:space-y-8">
       {/* Header Section */}
-      <div className="flex flex-col md:flex-row md:items-center md:justify-between gap-4 pb-6 border-b border-zinc-800/80">
+      <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-4 pb-5 border-b border-zinc-800/80">
         <div>
           <div className="flex items-center gap-2 mb-1">
-            <h1 className="text-2xl md:text-3xl font-bold tracking-tight text-zinc-100">
+            <h1 className="text-xl sm:text-2xl md:text-3xl font-bold tracking-tight text-zinc-100">
               Biblioteca
             </h1>
             <Badge variant="secondary" className="text-[11px] font-mono text-zinc-400">
               {videos.length} {videos.length === 1 ? "video" : "videos"}
             </Badge>
           </div>
-          <p className="text-sm text-zinc-400">
+          <p className="text-xs sm:text-sm text-zinc-400">
             Administra tus comerciales, visualiza estados de renderizado y accede a copias en Drive.
           </p>
         </div>
 
         {/* Action Buttons: Refresh + Nuevo Video */}
-        <div className="flex items-center gap-2.5 w-full md:w-auto">
+        <div className="grid grid-cols-2 sm:flex sm:items-center gap-2.5 w-full sm:w-auto">
           <Button
             variant="outline"
             size="default"
-            onClick={() => loadVideos(true)}
+            onClick={() => handleManualRefresh()}
             disabled={loading || isRefreshing}
-            className="border-zinc-800 text-zinc-300 hover:bg-zinc-900 gap-2 text-xs"
+            className="w-full sm:w-auto border-zinc-800 text-zinc-300 hover:bg-zinc-900 gap-2 text-xs h-10 sm:h-9"
             title="Sincronizar con Google Drive"
           >
             <RefreshCw className={`h-3.5 w-3.5 ${isRefreshing ? "animate-spin text-emerald-400" : ""}`} />
@@ -176,7 +198,7 @@ export default function LibraryPage() {
           <Dialog open={isDialogOpen} onOpenChange={setIsDialogOpen}>
             <DialogTrigger asChild>
               <Button
-                className="w-full md:w-auto shadow-lg shadow-white/5 bg-zinc-50 hover:bg-zinc-200 text-zinc-950 font-medium gap-2 text-xs"
+                className="w-full sm:w-auto shadow-lg shadow-white/5 bg-zinc-50 hover:bg-zinc-200 text-zinc-950 font-medium gap-2 text-xs h-10 sm:h-9"
                 size="default"
               >
                 <Plus className="h-4 w-4" />
@@ -364,7 +386,7 @@ export default function LibraryPage() {
             </Button>
             <Button
               variant="outline"
-              onClick={() => loadVideos(true)}
+              onClick={() => handleManualRefresh()}
               disabled={isRefreshing}
               className="border-zinc-800 text-zinc-300 hover:bg-zinc-900 gap-2 text-xs"
             >
@@ -384,7 +406,7 @@ export default function LibraryPage() {
         /* Cards Grid */
         <motion.div
           layout
-          className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-6"
+          className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-4 sm:gap-6"
         >
           <AnimatePresence>
             {filteredVideos.map((video, idx) => {

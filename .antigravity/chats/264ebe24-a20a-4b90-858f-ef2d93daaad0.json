@@ -304,6 +304,18 @@
       "created_at": "2026-11-05T06:27:57.524Z",
       "sender": "ios",
       "is_cancelled": false
+    },
+    {
+      "id": "4375c927-7dc5-4398-947f-4886575cc352",
+      "role": "user",
+      "content": "el sitio está mal optimizado para móvil, sigue estando la opción de pegar el html y q se haga mp4?",
+      "status": "pending",
+      "model": "gemini-3.8-flash-high",
+      "client_type": "gemini-bridge",
+      "parent_message_id": null,
+      "created_at": "2026-11-05T06:59:31.887Z",
+      "sender": "ios",
+      "is_cancelled": false
     }
   ]
 }
