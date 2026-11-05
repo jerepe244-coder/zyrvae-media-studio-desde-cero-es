@@ -4,16 +4,33 @@
 
 ---
 
-## 🚀 Fase 1: Diseño Visual & UI (Mock)
+## 🚀 Arquitectura Híbrida Nube-Servidor: HTML a Video MP4
 
-En esta primera fase se ha desarrollado la interfaz visual completa con diseño de nivel premium (estilo Vercel / Linear), modo oscuro en paleta **Zinc**, componentes accesibles y animaciones sutiles.
+Para superar los límites de tiempo de ejecución de Vercel y evitar cierres por sobrecalentamiento/RAM en dispositivos móviles de usuarios, ZYRVAE Media Studio adopta una arquitectura en dos capas independientes:
 
-### Stack Tecnológico
-- **Framework:** Next.js (App Router, React 19)
-- **Estilos:** Tailwind CSS v4 (Tema oscuro Zinc)
-- **Componentes UI:** Shadcn UI (`button`, `card`, `input`, `select`, `badge`, `dialog`)
-- **Iconografía:** Lucide React
-- **Animaciones:** Framer Motion
+```
+[ Celular o Compu del Empleado ] 
+             │
+             ▼ (Rellena datos y da clic en "Generar Video MP4")
+   [ Frontend en Vercel ]
+             │
+             ▼ (POST /api/render)
+[ Backend Dedicado en Render.com / Railway ] 
+             │
+             ▼ (Puppeteer Headless + FFmpeg)
+     [ Genera MP4 fluido ]
+             │
+             ▼ (Stream directo)
+    [ Descarga Directa ] ──► Archivo guardado automáticamente en el dispositivo
+```
+
+### 📈 Ventajas Clave
+* 📱 **Compatibilidad Total (Mobile-Friendly):** Todo el trabajo pesado de renderizado ocurre en el servidor en la nube. Un empleado puede generar el video desde un teléfono móvil de gama baja en la calle; la memoria del dispositivo no se ve afectada.
+* ⚡ **Estabilidad y Sin Límites de Tiempo:** Ejecuciones completas y fluidas a 30fps sin los cortes de timeout (10-60s) de funciones serverless tradicionales.
+* 💰 **Costo Inicial de $0 USD:** Desplegable en las capas gratuitas de Render.com o Railway con configuración Docker lista para producción.
+* 🔒 **Escalabilidad y Mantenimiento Simple:** Frontend y motor de renderizado desacoplados.
+
+👉 **Instrucciones de Despliegue en 2 minutos:** Consulta la guía en [`DEPLOYMENT_RENDER_RAILWAY.md`](DEPLOYMENT_RENDER_RAILWAY.md).
 
 ---
 
@@ -34,33 +51,22 @@ En esta primera fase se ha desarrollado la interfaz visual completa con diseño 
 
 ### 1. Biblioteca de Videos (`/library`)
 - Grilla de tarjetas interactivas con miniaturas de aspecto cinematográfico.
-- 6 videos comerciales simulados con metadatos reales (título, fecha, duración, ratio de aspecto).
-- Badges con código de color:
-  - **En Drive** (Verde esmeralda)
-  - **Renderizando** (Amarillo ámbar con spinner)
-  - **Borrador** (Gris zinc)
+- Integración opcional con Google Drive para almacenamiento centralizado.
 - Filtros interactivos por estado ("Todos", "En Drive", "Renderizando", "Borradores").
 - Buscador por título.
-- Botón superior derecho **"+ Nuevo Video"** que abre un modal `Dialog` para iniciar un nuevo proyecto y redirigir al Estudio.
 
 ### 2. Estudio de Creación (`/studio`)
-- **Columna Izquierda (Formulario de Parámetros):**
-  - `Input`: Nombre del video comercial.
-  - `Select`: Plantilla ("Comercial ZYRVAE", "Caso de Éxito", "Reel").
-  - Selectores de formato (9:16 vertical, 16:9 horizontal) y duración (15s, 30s, 60s).
-  - Botón **"Renderizar Video"** que despliega el modal interactivo de confirmación con aviso de *"Próximamente"* (el motor de renderizado HyperFrames / Remotion se integrará en fases posteriores).
-- **Columna Derecha (Simulador Móvil 9:16):**
-  - Chasis realista de smartphone con Dynamic Island y relación de aspecto vertical 9:16.
-  - Botón de **Play** central con micro-interacción.
-  - Título y etiqueta de **"Previsualización"**.
-  - Canvas interactivo que sincroniza en tiempo real el título, la plantilla y los parámetros configurados en el formulario.
+- **Modo HTML / CSS:** Editor y renderizador de plantillas HTML animadas directas a MP4.
+- **Modo Remotion / Comercial:** Formulario interactivo con variables dinámicas de marca (título, subtítulo, cifras de impacto, color de acento, llamada a la acción).
+- **Simulador Móvil 9:16 en Vivo:** Previsualización en tiempo real adaptada a pantallas verticales con chasis de smartphone.
+- **Generación y Descarga Directa:** Al presionar "Generar Video MP4", el archivo MP4 se empaqueta en la nube y se descarga automáticamente en el dispositivo.
 
 ---
 
 ## 🛠️ Comandos de Desarrollo
 
 ```bash
-# Instalar dependencias
+# Instalar dependencias del frontend Next.js
 npm install
 
 # Iniciar servidor de desarrollo
@@ -70,5 +76,10 @@ npm run dev
 npm run build
 
 # Iniciar en modo producción
+npm start
+
+# Iniciar microservicio de renderizado localmente
+cd renderer-service
+npm install
 npm start
 ```

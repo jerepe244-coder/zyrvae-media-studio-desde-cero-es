@@ -3,6 +3,19 @@
   "name": "🚀 Propuesta Técnica: Nuevo Motor de",
   "createdAt": "2026-11-05T17:05:09.446Z",
   "filename": "37aefdbf-7576-4448-a2d3-ff1d49c58443.json",
-  "geminiStarted": false,
-  "messages": []
+  "geminiStarted": true,
+  "messages": [
+    {
+      "id": "529332cd-cb4a-4b23-bceb-deec50521d15",
+      "role": "user",
+      "content": "🚀 Propuesta Técnica: Nuevo Motor de Renderizado HTML a MP4\n\n📋 Resumen del Problema Actual\nNuestro sistema actual basado en GitHub Actions presenta fallas de estabilidad, límites en los tiempos de ejecución y problemas de compatibilidad al actualizar el navegador en segundo plano. Además, delegar el procesamiento al navegador de los usuarios (teléfonos o computadoras lentas) causaría cierres inesperados (\"crasheos\") por falta de memoria RAM.\n\n💡 La Solución Propuesta: Arquitectura Híbrida Nube-Servidor\nPara resolver esto de forma definitiva, implementaremos una arquitectura dividida en dos capas independientes que aprovecha lo mejor de cada tecnología sin generar costos fijos elevados:\n\n[ Celular o Compu del Empleado ] \n             │\n             ▼ (Rellena datos y da clic en \"Generar\")\n   [ Frontend en Vercel ]\n             │\n             ▼ (Envía la orden por detrás)\n[ Backend Estable en Render.com / Railway ] ───► [ Genera MP4 fluido ] ───► [ Descarga Directa ]\n\n\n\n🛠️ ¿Cómo Funciona el Nuevo Flujo?\n1. Interfaz de Usuario (Frontend en Vercel):\n    * El empleado entra a nuestra plataforma web (diseñada de forma atractiva y moderna) desde su computadora o su celular.\n    * Rellena un formulario con los datos dinámicos de la empresa (nombres, logos, cifras, imágenes).\n    * Al terminar, presiona el botón \"Generar Video MP4\".\n2. Procesamiento Inteligente (Servidor Dedicado):\n    * Vercel le envía los datos por detrás a un microservidor en la nube (Render.com o Railway).\n    * Este servidor levanta un navegador virtual ultra-rápido (Puppeteer / Chromium Headless).\n    * El servidor simula la animación HTML a la perfección y a máxima velocidad.\n3. Compilación y Entrega:\n    * El servidor toma las capturas y usa FFmpeg para empaquetar todo directamente en un archivo MP4 estándar.\n    * El archivo final se envía de vuelta al dispositivo del usuario y se descarga automáticamente en su carpeta de descargas.\n\n\n\n📈 Ventajas Clave para la Empresa\n* 📱 Compatibilidad Total (Mobile-Friendly): Todo el trabajo pesado se hace en la nube. El empleado puede generar el video desde un teléfono móvil gama baja en la calle o desde una computadora de oficina antigua; el rendimiento siempre será idéntico y nunca se colgará.\n* ⚡ Estabilidad y Sin Límites de Tiempo: A diferencia de Vercel (que corta los procesos a los 10-60 segundos), plataformas como Render o Railway permiten ejecuciones largas y continuas. Los videos pesados o de larga duración se procesarán sin interrupciones.\n* 💰 Costo Inicial de $0 USD: Ambas plataformas cuentan con generosas capas gratuitas para entornos de desarrollo e internos. Si la empresa escala y necesita generar miles de videos en paralelo, el costo de ampliación es extremadamente bajo (desde $5 USD al mes), eliminando sorpresas en la facturación.\n* 🔒 Escalabilidad y Mantenimiento Simple: Al separar el diseño visual (Vercel) del motor de video (Render), podemos actualizar la interfaz o cambiar los textos en segundos sin riesgo de romper el código que fabrica los videos MP4.",
+      "status": "pending",
+      "model": "gemini-3.8-flash-high",
+      "client_type": "gemini-bridge",
+      "parent_message_id": null,
+      "created_at": "2026-11-05T17:05:12.173Z",
+      "sender": "ios",
+      "is_cancelled": false
+    }
+  ]
 }

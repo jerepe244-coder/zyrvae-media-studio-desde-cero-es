@@ -186,6 +186,10 @@ export default function StudioPage() {
     type: "success" | "error";
     message: string;
     details?: string;
+    engine?: string;
+    isDirectDownload?: boolean;
+    downloadUrl?: string;
+    filename?: string;
   } | null>(null);
   const [showResultModal, setShowResultModal] = React.useState(false);
 
@@ -290,7 +294,7 @@ export default function StudioPage() {
     handleChangeDuration(60);
   };
 
-  // Enviar orden de renderizado a GitHub Actions
+  // Enviar orden de renderizado al motor dedicado (Render/Railway) o fallback
   const handleRenderVideo = async () => {
     if (isLoading) return;
 
@@ -324,6 +328,45 @@ export default function StudioPage() {
         body: JSON.stringify(payload),
       });
 
+      const contentType = response.headers.get("content-type") || "";
+
+      // Caso A: El servidor devuelve directamente el video binario MP4 (Render.com / Railway)
+      if (contentType.includes("video/mp4") || contentType.includes("octet-stream")) {
+        const blob = await response.blob();
+        const url = window.URL.createObjectURL(blob);
+        
+        let filename = `${(mode === "html" ? htmlTitle : videoProps.title) || "Comercial_ZYRVAE"}.mp4`;
+        const disposition = response.headers.get("content-disposition");
+        if (disposition && disposition.includes("filename=")) {
+          const match = disposition.match(/filename="?([^"]+)"?/);
+          if (match && match[1]) filename = match[1];
+        }
+        filename = filename.replace(/[^a-zA-Z0-9_\-\.]/g, "_");
+
+        const a = document.createElement("a");
+        a.style.display = "none";
+        a.href = url;
+        a.download = filename;
+        document.body.appendChild(a);
+        a.click();
+        setTimeout(() => {
+          document.body.removeChild(a);
+        }, 1500);
+
+        const durText = durationSeconds === 60 ? "1 minuto (60s)" : `${durationSeconds} segundos`;
+        setFeedback({
+          type: "success",
+          message: `¡Video MP4 (${durText}) generado con éxito! La descarga directa ha comenzado automáticamente en tu dispositivo.`,
+          isDirectDownload: true,
+          downloadUrl: url,
+          filename: filename,
+          engine: "Render.com / Railway (Microservicio Cloud)",
+        });
+        setShowResultModal(true);
+        return;
+      }
+
+      // Caso B: El servidor devuelve JSON (GitHub Actions o respuesta de estado)
       const data = await response.json();
 
       if (!response.ok) {
@@ -343,6 +386,8 @@ export default function StudioPage() {
       setFeedback({
         type: "success",
         message: successMsg,
+        engine: data.engine || (mode === "html" ? "Convertidor HTML a MP4" : "Remotion Ultra HD"),
+        isDirectDownload: false,
       });
       setShowResultModal(true);
     } catch (err: unknown) {
@@ -691,12 +736,12 @@ export default function StudioPage() {
                       {isLoading ? (
                         <>
                           <Loader2 className="h-4 w-4 animate-spin text-white" />
-                          Procesando y Renderizando HTML a MP4 ({durationSeconds}s)...
+                          Generando Video MP4 en la Nube ({durationSeconds}s)...
                         </>
                       ) : (
                         <>
                           <Play className="h-4 w-4 text-white fill-white" />
-                          Renderizar HTML a Video MP4 ({durationSeconds === 60 ? "1 min" : `${durationSeconds}s`})
+                          Generar Video MP4 ({durationSeconds === 60 ? "1 min" : `${durationSeconds}s`})
                         </>
                       )}
                     </Button>
@@ -1007,12 +1052,12 @@ export default function StudioPage() {
                       {isLoading ? (
                         <>
                           <Loader2 className="h-4 w-4 animate-spin text-white" />
-                          Iniciando renderizado con Remotion ({durationSeconds}s)...
+                          Generando Video MP4 en la Nube ({durationSeconds}s)...
                         </>
                       ) : (
                         <>
                           <Clapperboard className="h-4 w-4 text-white" />
-                          Renderizar Video con Remotion ({durationSeconds === 60 ? "1 min" : `${durationSeconds}s`})
+                          Generar Video MP4 ({durationSeconds === 60 ? "1 min" : `${durationSeconds}s`})
                         </>
                       )}
                     </Button>
@@ -1144,10 +1189,12 @@ export default function StudioPage() {
             </div>
             <DialogTitle className="text-base sm:text-lg font-semibold">
               {feedback?.type === "success"
-                ? mode === "html"
+                ? feedback?.isDirectDownload
+                  ? "¡Video MP4 Generado y Descargado!"
+                  : mode === "html"
                   ? "¡Conversión HTML a MP4 iniciada!"
                   : "¡Renderizado Remotion iniciado!"
-                : "Error al iniciar la conversión"}
+                : "Error al generar video"}
             </DialogTitle>
             <DialogDescription className="text-zinc-400 text-xs leading-relaxed pt-1">
               {feedback?.message}
@@ -1171,7 +1218,7 @@ export default function StudioPage() {
               <div className="flex items-center justify-between text-zinc-300">
                 <span className="text-zinc-400">Motor:</span>
                 <span className="font-semibold text-indigo-400">
-                  {mode === "html" ? "Convertidor HTML a MP4" : "Remotion Ultra HD"}
+                  {feedback?.engine || (mode === "html" ? "Convertidor HTML a MP4" : "Remotion Ultra HD")}
                 </span>
               </div>
               <div className="flex items-center justify-between text-zinc-300">
@@ -1183,23 +1230,32 @@ export default function StudioPage() {
               <div className="flex items-center justify-between text-zinc-300">
                 <span className="text-zinc-400">Destino:</span>
                 <span className="font-semibold text-emerald-400">
-                  {saveDestination === "device"
+                  {feedback?.isDirectDownload
+                    ? "📱 Descarga Directa en tu Dispositivo (Completada)"
+                    : saveDestination === "device"
                     ? "📱 En este Dispositivo"
                     : "☁️ Google Drive (Biblioteca)"}
                 </span>
               </div>
 
               <div className="pt-2 border-t border-zinc-800 flex items-center justify-between">
-                <span className="text-[11px] text-zinc-400">Progreso en vivo:</span>
-                <a
-                  href="https://github.com/jerepe244-coder/zyrvae-media-studio-desde-cero-es/actions/workflows/render-video.yml"
-                  target="_blank"
-                  rel="noreferrer"
-                  className="text-xs text-indigo-400 hover:text-indigo-300 inline-flex items-center gap-1 font-medium hover:underline"
-                >
-                  Ver en GitHub Actions
-                  <ExternalLink className="h-3 w-3" />
-                </a>
+                <span className="text-[11px] text-zinc-400">Estado:</span>
+                {feedback?.isDirectDownload ? (
+                  <span className="text-xs text-emerald-400 inline-flex items-center gap-1 font-medium">
+                    <CheckCircle2 className="h-3.5 w-3.5" />
+                    Listo en tu carpeta de descargas
+                  </span>
+                ) : (
+                  <a
+                    href="https://github.com/jerepe244-coder/zyrvae-media-studio-desde-cero-es/actions/workflows/render-video.yml"
+                    target="_blank"
+                    rel="noreferrer"
+                    className="text-xs text-indigo-400 hover:text-indigo-300 inline-flex items-center gap-1 font-medium hover:underline"
+                  >
+                    Ver en GitHub Actions
+                    <ExternalLink className="h-3 w-3" />
+                  </a>
+                )}
               </div>
             </div>
           )}
@@ -1213,15 +1269,34 @@ export default function StudioPage() {
               Cerrar
             </Button>
             {feedback?.type === "success" && (
-              <a
-                href="https://github.com/jerepe244-coder/zyrvae-media-studio-desde-cero-es/actions/workflows/render-video.yml"
-                target="_blank"
-                rel="noreferrer"
-                className="inline-flex items-center justify-center px-4 py-2 rounded-md text-xs font-medium bg-indigo-600 hover:bg-indigo-700 text-white transition-colors gap-1.5"
-              >
-                Seguir en GitHub
-                <ExternalLink className="h-3 w-3" />
-              </a>
+              feedback?.isDirectDownload && feedback?.downloadUrl ? (
+                <Button
+                  onClick={() => {
+                    if (feedback.downloadUrl) {
+                      const a = document.createElement("a");
+                      a.href = feedback.downloadUrl;
+                      a.download = feedback.filename || "video.mp4";
+                      document.body.appendChild(a);
+                      a.click();
+                      document.body.removeChild(a);
+                    }
+                  }}
+                  className="inline-flex items-center justify-center px-4 py-2 rounded-md text-xs font-medium bg-emerald-600 hover:bg-emerald-700 text-white transition-colors gap-1.5"
+                >
+                  <Download className="h-3.5 w-3.5" />
+                  Volver a Descargar
+                </Button>
+              ) : (
+                <a
+                  href="https://github.com/jerepe244-coder/zyrvae-media-studio-desde-cero-es/actions/workflows/render-video.yml"
+                  target="_blank"
+                  rel="noreferrer"
+                  className="inline-flex items-center justify-center px-4 py-2 rounded-md text-xs font-medium bg-indigo-600 hover:bg-indigo-700 text-white transition-colors gap-1.5"
+                >
+                  Seguir en GitHub
+                  <ExternalLink className="h-3 w-3" />
+                </a>
+              )
             )}
           </DialogFooter>
         </DialogContent>

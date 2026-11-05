@@ -1,0 +1,14 @@
+services:
+  - type: web
+    name: zyrvae-video-renderer
+    runtime: docker
+    dockerfilePath: ./renderer-service/Dockerfile
+    dockerContext: ./renderer-service
+    plan: free
+    region: oregon
+    healthCheckPath: /health
+    envVars:
+      - key: PORT
+        value: 8080
+      - key: NODE_ENV
+        value: production
