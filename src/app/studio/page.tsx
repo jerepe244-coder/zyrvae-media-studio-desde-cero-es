@@ -41,7 +41,7 @@ import {
 } from "@/components/ui/dialog";
 import { CommercialProps, defaultCommercialProps } from "@/remotion/types";
 
-// Importación dinámica del reproductor Remotion para SSR seguro
+// Importación dinámica lazy del reproductor Remotion (solo se descarga si se activa el modo Remotion)
 const RemotionPreviewPlayer = dynamic(
   () => import("@/components/studio/RemotionPreviewPlayer"),
   {
@@ -49,14 +49,14 @@ const RemotionPreviewPlayer = dynamic(
     loading: () => (
       <div className="w-full h-full flex flex-col items-center justify-center p-6 text-center space-y-3 bg-zinc-950">
         <Loader2 className="h-8 w-8 animate-spin text-indigo-400" />
-        <p className="text-xs text-zinc-400">Cargando reproductor Remotion...</p>
+        <p className="text-xs text-zinc-400">Cargando motor Remotion...</p>
       </div>
     ),
   }
 );
 
-// Plantilla HTML de demostración para anuncios comerciales verticales 9:16
-const SAMPLE_AD_HTML = `<!DOCTYPE html>
+// Plantilla HTML de demostración publicitaria vertical 9:16 (sincronizada con duración)
+const createSampleAdHtml = (seconds: number = 30) => `<!DOCTYPE html>
 <html lang="es">
 <head>
   <meta charset="UTF-8">
@@ -104,13 +104,13 @@ const SAMPLE_AD_HTML = `<!DOCTYPE html>
     .stat-lbl { font-size: 22px; color: #71717a; text-transform: uppercase; letter-spacing: 0.08em; margin-top: 6px; }
     .footer { position: relative; z-index: 10; display: flex; flex-direction: column; gap: 24px; }
     .progress-track { width: 100%; height: 8px; background: rgba(255, 255, 255, 0.1); border-radius: 4px; overflow: hidden; }
-    .progress-fill { height: 100%; width: 0%; background: linear-gradient(90deg, #6366f1, #ec4899); box-shadow: 0 0 20px #6366f1; animation: fillProgress 10s linear infinite; }
+    .progress-fill { height: 100%; width: 0%; background: linear-gradient(90deg, #6366f1, #ec4899); box-shadow: 0 0 20px #6366f1; animation: fillProgress ${seconds}s linear infinite; }
     @keyframes fillProgress { 0% { width: 0%; } 100% { width: 100%; } }
     .foot-labels { display: flex; justify-content: space-between; font-size: 24px; color: #71717a; font-weight: 600; text-transform: uppercase; letter-spacing: 0.08em; }
     @keyframes fadeInDown { from { opacity: 0; transform: translateY(-30px); } to { opacity: 1; transform: translateY(0); } }
   </style>
 </head>
-<body data-composition-id="main" data-duration="10" data-width="1080" data-height="1920" data-fps="30" data-no-timeline>
+<body data-composition-id="main" data-duration="${seconds}" data-width="1080" data-height="1920" data-fps="30" data-no-timeline>
   <div class="canvas">
     <div class="orb"></div>
     <div class="badge">
@@ -152,6 +152,12 @@ const COLOR_PRESETS = [
   { name: "Cian Eléctrico", hex: "#06b6d4" },
 ];
 
+const DURATION_PRESETS = [
+  { seconds: 15, label: "15s", title: "15 segundos", desc: "Reel / Story" },
+  { seconds: 30, label: "30s", title: "30 segundos", desc: "Comercial Estándar", badge: "Recomendado" },
+  { seconds: 60, label: "1 min", title: "60 segundos (1 min)", desc: "Anuncio Completo" },
+];
+
 export default function StudioPage() {
   // Modo de edición: "html" (pegar HTML) o "remotion" (formulario visual)
   const [mode, setMode] = React.useState<"html" | "remotion">("html");
@@ -159,8 +165,12 @@ export default function StudioPage() {
   // Pestaña en vista móvil: "editor" o "preview"
   const [mobileTab, setMobileTab] = React.useState<"editor" | "preview">("editor");
 
+  // Configuración general compartida: defecto en 30 segundos
+  const [durationSeconds, setDurationSeconds] = React.useState<number>(30);
+  const [saveDestination, setSaveDestination] = React.useState<"device" | "drive">("device");
+
   // Estado del código HTML
-  const [htmlCode, setHtmlCode] = React.useState<string>(SAMPLE_AD_HTML);
+  const [htmlCode, setHtmlCode] = React.useState<string>(createSampleAdHtml(30));
   const [htmlTitle, setHtmlTitle] = React.useState<string>("Comercial HTML ZYRVAE");
   const [copied, setCopied] = React.useState(false);
   const [iframeKey, setIframeKey] = React.useState(0);
@@ -169,10 +179,6 @@ export default function StudioPage() {
   const [videoProps, setVideoProps] = React.useState<CommercialProps>({
     ...defaultCommercialProps,
   });
-
-  // Configuración general compartida
-  const [durationSeconds, setDurationSeconds] = React.useState<number>(10);
-  const [saveDestination, setSaveDestination] = React.useState<"device" | "drive">("device");
 
   // Estado de carga y modal de resultados
   const [isLoading, setIsLoading] = React.useState(false);
@@ -202,6 +208,19 @@ export default function StudioPage() {
     return () => window.removeEventListener("resize", updateScale);
   }, []);
 
+  // Cambiar duración y sincronizar con el código HTML si aplica
+  const handleChangeDuration = (sec: number) => {
+    setDurationSeconds(sec);
+    if (htmlCode.includes("fillProgress")) {
+      setHtmlCode((prev) =>
+        prev
+          .replace(/fillProgress\s+\d+s/gi, `fillProgress ${sec}s`)
+          .replace(/data-duration=["']\d+["']/gi, `data-duration="${sec}"`)
+      );
+      setIframeKey((k) => k + 1);
+    }
+  };
+
   // Copiar código HTML al portapapeles
   const handleCopyHtml = async () => {
     try {
@@ -215,11 +234,11 @@ export default function StudioPage() {
 
   // Cargar ejemplo en modo HTML
   const handleLoadSampleHtml = () => {
-    setHtmlCode(SAMPLE_AD_HTML);
+    setHtmlCode(createSampleAdHtml(durationSeconds));
     setIframeKey((prev) => prev + 1);
   };
 
-  // Cargar plantillas Remotion
+  // Cargar plantillas Remotion con duraciones adecuadas
   const handleLoadTemplateZyrvae = () => {
     setVideoProps({
       title: "Tu publicidad en video, al instante.",
@@ -234,7 +253,7 @@ export default function StudioPage() {
       callToAction: "Potencia tu Negocio Hoy",
       template: "commercial",
     });
-    setDurationSeconds(10);
+    handleChangeDuration(30);
   };
 
   const handleLoadTemplateSale = () => {
@@ -251,7 +270,7 @@ export default function StudioPage() {
       callToAction: "Comprar con Descuento",
       template: "reel",
     });
-    setDurationSeconds(5);
+    handleChangeDuration(15);
   };
 
   const handleLoadTemplateSuccess = () => {
@@ -268,7 +287,7 @@ export default function StudioPage() {
       callToAction: "Conocer el Caso Completo",
       template: "success-case",
     });
-    setDurationSeconds(15);
+    handleChangeDuration(60);
   };
 
   // Enviar orden de renderizado a GitHub Actions
@@ -311,14 +330,15 @@ export default function StudioPage() {
         throw new Error(data.details || data.error || "Error al solicitar la conversión a MP4.");
       }
 
+      const durText = durationSeconds === 60 ? "1 minuto (60s)" : `${durationSeconds} segundos`;
       const successMsg =
         saveDestination === "device"
           ? mode === "html"
-            ? "¡Conversión de HTML a MP4 iniciada! En unos instantes podrás descargar tu archivo de video."
-            : "¡Renderizado con Remotion iniciado! En breves instantes podrás descargar tu video MP4."
+            ? `¡Conversión de HTML a MP4 (${durText}) iniciada! En unos instantes podrás descargar tu archivo de video.`
+            : `¡Renderizado con Remotion (${durText}) iniciado! En breves instantes podrás descargar tu video MP4.`
           : mode === "html"
-          ? "¡Conversión de HTML a MP4 iniciada! El video se generará y se guardará en tu Google Drive."
-          : "¡Renderizado con Remotion iniciado! El video se generará y se guardará en tu Google Drive.";
+          ? `¡Conversión de HTML a MP4 (${durText}) iniciada! El video se generará y se guardará en tu Google Drive.`
+          : `¡Renderizado con Remotion (${durText}) iniciado! El video se generará y se guardará en tu Google Drive.`;
 
       setFeedback({
         type: "success",
@@ -361,7 +381,7 @@ export default function StudioPage() {
               Estudio de Video Comercial
             </h1>
             <p className="text-xs sm:text-sm text-zinc-400 mt-0.5">
-              Genera comerciales Ultra HD 9:16 en MP4 pegando código HTML o usando el editor visual Remotion.
+              Crea comerciales Ultra HD 9:16 en MP4 (15s, 30s o 1 minuto) con código HTML o plantillas Remotion.
             </p>
           </div>
 
@@ -546,33 +566,61 @@ export default function StudioPage() {
               {/* Card de Parámetros: Duración y Destino de Guardado */}
               <Card className="border-zinc-800/80 bg-zinc-900/40 backdrop-blur-md shadow-xl">
                 <CardContent className="pt-5 space-y-4">
-                  {/* Selector de Duración */}
-                  <div className="space-y-2">
-                    <label className="text-xs font-medium text-zinc-300 flex items-center justify-between">
-                      <span className="flex items-center gap-1.5">
+                  {/* Selector de Duración (15s, 30s o 1 minuto + personalizado) */}
+                  <div className="space-y-2.5">
+                    <div className="flex items-center justify-between">
+                      <label className="text-xs font-medium text-zinc-300 flex items-center gap-1.5">
                         <Clock className="h-3.5 w-3.5 text-zinc-400" />
                         Duración del Video a Generar
-                      </span>
+                      </label>
                       <span className="text-[11px] font-mono text-indigo-400 font-semibold">
-                        {durationSeconds} segundos ({durationSeconds * 30} frames)
+                        {durationSeconds === 60
+                          ? "1 minuto (60s)"
+                          : `${durationSeconds} segundos`}{" "}
+                        • {durationSeconds * 30} frames
                       </span>
-                    </label>
+                    </div>
+
                     <div className="grid grid-cols-3 gap-2">
-                      {[5, 10, 15].map((sec) => (
+                      {DURATION_PRESETS.map((item) => (
                         <button
-                          key={sec}
+                          key={item.seconds}
                           type="button"
-                          onClick={() => setDurationSeconds(sec)}
-                          className={`py-2 px-3 rounded-xl border text-center transition-all ${
-                            durationSeconds === sec
+                          onClick={() => handleChangeDuration(item.seconds)}
+                          className={`py-2 px-2.5 rounded-xl border text-center transition-all relative ${
+                            durationSeconds === item.seconds
                               ? "bg-indigo-600/20 border-indigo-500/80 text-white font-semibold shadow-sm ring-1 ring-indigo-500/40"
                               : "bg-zinc-950/50 border-zinc-800/80 text-zinc-400 hover:text-zinc-200 hover:border-zinc-700"
                           }`}
                         >
-                          <span className="text-xs sm:text-sm font-semibold">{sec}s</span>
-                          <p className="text-[10px] text-zinc-500">{sec * 30} fps</p>
+                          {item.badge && (
+                            <span className="absolute -top-2 right-1.5 bg-indigo-500 text-[9px] font-bold text-white px-1.5 py-0.5 rounded-full uppercase tracking-tighter shadow-sm">
+                              {item.badge}
+                            </span>
+                          )}
+                          <span className="text-xs sm:text-sm font-semibold block">{item.label}</span>
+                          <p className="text-[10px] text-zinc-500 leading-tight mt-0.5 truncate">{item.desc}</p>
                         </button>
                       ))}
+                    </div>
+
+                    {/* Selector de Duración Personalizada */}
+                    <div className="flex items-center gap-2 pt-1 text-xs text-zinc-400">
+                      <span className="text-[11px] text-zinc-400">Personalizado:</span>
+                      <input
+                        type="number"
+                        min={3}
+                        max={120}
+                        value={durationSeconds}
+                        onChange={(e) => {
+                          const val = parseInt(e.target.value, 10);
+                          if (!isNaN(val) && val >= 1 && val <= 120) {
+                            handleChangeDuration(val);
+                          }
+                        }}
+                        className="w-16 px-2 py-1 bg-zinc-950 border border-zinc-800 rounded-lg text-center text-xs font-mono text-white focus:outline-none focus:border-indigo-500"
+                      />
+                      <span className="text-[11px] text-zinc-500">segundos (soporta de 3s hasta 120s / 2 min)</span>
                     </div>
                   </div>
 
@@ -643,17 +691,17 @@ export default function StudioPage() {
                       {isLoading ? (
                         <>
                           <Loader2 className="h-4 w-4 animate-spin text-white" />
-                          Procesando y Renderizando HTML a MP4...
+                          Procesando y Renderizando HTML a MP4 ({durationSeconds}s)...
                         </>
                       ) : (
                         <>
                           <Play className="h-4 w-4 text-white fill-white" />
-                          Renderizar HTML y Generar Video MP4
+                          Renderizar HTML a Video MP4 ({durationSeconds === 60 ? "1 min" : `${durationSeconds}s`})
                         </>
                       )}
                     </Button>
                     <p className="text-[11px] text-zinc-500 text-center mt-2">
-                      El código HTML se procesa en GitHub Actions y genera un archivo de video MP4 Ultra HD 1080×1920.
+                      El código HTML se procesa en resolución nativa vertical 1080×1920 a 30fps.
                     </p>
                   </div>
                 </CardContent>
@@ -673,7 +721,7 @@ export default function StudioPage() {
                   className="border-zinc-800 hover:bg-zinc-800 text-xs gap-1.5 text-zinc-300"
                 >
                   <Sparkles className="h-3.5 w-3.5 text-indigo-400" />
-                  Comercial ZYRVAE
+                  Comercial ZYRVAE (30s)
                 </Button>
                 <Button
                   variant="outline"
@@ -682,7 +730,7 @@ export default function StudioPage() {
                   className="border-zinc-800 hover:bg-zinc-800 text-xs gap-1.5 text-zinc-300"
                 >
                   <Sparkles className="h-3.5 w-3.5 text-rose-400" />
-                  Oferta Flash
+                  Oferta Flash (15s)
                 </Button>
                 <Button
                   variant="outline"
@@ -691,7 +739,7 @@ export default function StudioPage() {
                   className="border-zinc-800 hover:bg-zinc-800 text-xs gap-1.5 text-zinc-300"
                 >
                   <Sparkles className="h-3.5 w-3.5 text-emerald-400" />
-                  Caso de Éxito
+                  Caso de Éxito (1 min)
                 </Button>
               </div>
 
@@ -838,28 +886,57 @@ export default function StudioPage() {
                     </div>
                   </div>
 
-                  {/* Selector de Duración Remotion */}
-                  <div className="space-y-2 pt-2 border-t border-zinc-800/80">
-                    <label className="text-xs font-medium text-zinc-300 flex items-center gap-1.5">
-                      <Clock className="h-3.5 w-3.5 text-zinc-400" />
-                      Duración del Video
-                    </label>
+                  {/* Selector de Duración Remotion (15s, 30s o 1 minuto + personalizado) */}
+                  <div className="space-y-2.5 pt-2 border-t border-zinc-800/80">
+                    <div className="flex items-center justify-between">
+                      <label className="text-xs font-medium text-zinc-300 flex items-center gap-1.5">
+                        <Clock className="h-3.5 w-3.5 text-zinc-400" />
+                        Duración del Video Remotion
+                      </label>
+                      <span className="text-[11px] font-mono text-indigo-400 font-semibold">
+                        {durationSeconds === 60 ? "1 minuto (60s)" : `${durationSeconds} segundos`} • {durationSeconds * 30} frames
+                      </span>
+                    </div>
+
                     <div className="grid grid-cols-3 gap-2">
-                      {[5, 10, 15].map((sec) => (
+                      {DURATION_PRESETS.map((item) => (
                         <button
-                          key={sec}
+                          key={item.seconds}
                           type="button"
-                          onClick={() => setDurationSeconds(sec)}
-                          className={`py-2 px-3 rounded-xl border text-center transition-all ${
-                            durationSeconds === sec
+                          onClick={() => handleChangeDuration(item.seconds)}
+                          className={`py-2 px-2.5 rounded-xl border text-center transition-all relative ${
+                            durationSeconds === item.seconds
                               ? "bg-indigo-600/20 border-indigo-500/80 text-white font-semibold shadow-sm ring-1 ring-indigo-500/40"
                               : "bg-zinc-950/50 border-zinc-800/80 text-zinc-400 hover:text-zinc-200 hover:border-zinc-700"
                           }`}
                         >
-                          <span className="text-xs sm:text-sm font-semibold">{sec}s</span>
-                          <p className="text-[10px] text-zinc-500">{sec * 30} frames</p>
+                          {item.badge && (
+                            <span className="absolute -top-2 right-1.5 bg-indigo-500 text-[9px] font-bold text-white px-1.5 py-0.5 rounded-full uppercase tracking-tighter shadow-sm">
+                              {item.badge}
+                            </span>
+                          )}
+                          <span className="text-xs sm:text-sm font-semibold block">{item.label}</span>
+                          <p className="text-[10px] text-zinc-500 leading-tight mt-0.5 truncate">{item.desc}</p>
                         </button>
                       ))}
+                    </div>
+
+                    <div className="flex items-center gap-2 pt-1 text-xs text-zinc-400">
+                      <span className="text-[11px] text-zinc-400">Personalizado:</span>
+                      <input
+                        type="number"
+                        min={3}
+                        max={120}
+                        value={durationSeconds}
+                        onChange={(e) => {
+                          const val = parseInt(e.target.value, 10);
+                          if (!isNaN(val) && val >= 1 && val <= 120) {
+                            handleChangeDuration(val);
+                          }
+                        }}
+                        className="w-16 px-2 py-1 bg-zinc-950 border border-zinc-800 rounded-lg text-center text-xs font-mono text-white focus:outline-none focus:border-indigo-500"
+                      />
+                      <span className="text-[11px] text-zinc-500">segundos (hasta 120s)</span>
                     </div>
                   </div>
 
@@ -930,12 +1007,12 @@ export default function StudioPage() {
                       {isLoading ? (
                         <>
                           <Loader2 className="h-4 w-4 animate-spin text-white" />
-                          Iniciando renderizado con Remotion...
+                          Iniciando renderizado con Remotion ({durationSeconds}s)...
                         </>
                       ) : (
                         <>
                           <Clapperboard className="h-4 w-4 text-white" />
-                          Renderizar Video con Remotion (.mp4)
+                          Renderizar Video con Remotion ({durationSeconds === 60 ? "1 min" : `${durationSeconds}s`})
                         </>
                       )}
                     </Button>
@@ -1016,7 +1093,7 @@ export default function StudioPage() {
                   {/* Badge flotante indicador HTML LIVE */}
                   <div className="absolute top-6 left-3.5 z-20 pointer-events-none flex items-center gap-1.5 px-2.5 py-1 rounded-full bg-zinc-950/80 border border-zinc-800/80 backdrop-blur-md text-[10px] text-zinc-300 font-mono">
                     <span className="w-1.5 h-1.5 rounded-full bg-emerald-400 animate-pulse" />
-                    <span>HTML LIVE</span>
+                    <span>HTML LIVE • {durationSeconds === 60 ? "1 min" : `${durationSeconds}s`}</span>
                   </div>
                 </div>
               ) : (
@@ -1030,7 +1107,7 @@ export default function StudioPage() {
                   {/* Badge flotante indicador REMOTION LIVE */}
                   <div className="absolute top-6 left-3.5 z-20 pointer-events-none flex items-center gap-1.5 px-2.5 py-1 rounded-full bg-zinc-950/80 border border-zinc-800/80 backdrop-blur-md text-[10px] text-zinc-300 font-mono">
                     <span className="w-1.5 h-1.5 rounded-full bg-indigo-400 animate-pulse" />
-                    <span>REMOTION LIVE</span>
+                    <span>REMOTION LIVE • {durationSeconds === 60 ? "1 min" : `${durationSeconds}s`}</span>
                   </div>
                 </div>
               )}
@@ -1042,8 +1119,8 @@ export default function StudioPage() {
 
           <p className="text-[11px] text-zinc-400 text-center max-w-[300px] leading-relaxed">
             {mode === "html"
-              ? "Vista previa en vivo del código HTML en formato 9:16 vertical. Cualquier cambio se refleja al instante."
-              : "Previsualización Remotion con timeline y controles interactivos."}
+              ? `Vista previa en vivo del código HTML en formato 9:16 vertical (${durationSeconds === 60 ? "1 min" : `${durationSeconds}s`}). Cualquier cambio se refleja al instante.`
+              : `Previsualización Remotion con timeline y controles interactivos (${durationSeconds === 60 ? "1 min" : `${durationSeconds}s`}).`}
           </p>
         </div>
       </div>
@@ -1099,7 +1176,9 @@ export default function StudioPage() {
               </div>
               <div className="flex items-center justify-between text-zinc-300">
                 <span className="text-zinc-400">Duración:</span>
-                <span className="font-semibold text-white">{durationSeconds}s (30fps)</span>
+                <span className="font-semibold text-white">
+                  {durationSeconds === 60 ? "1 minuto (60s)" : `${durationSeconds} segundos`} (30fps)
+                </span>
               </div>
               <div className="flex items-center justify-between text-zinc-300">
                 <span className="text-zinc-400">Destino:</span>

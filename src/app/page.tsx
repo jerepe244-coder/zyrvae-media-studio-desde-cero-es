@@ -1,5 +1,5 @@
-import { redirect } from "next/navigation"
+import StudioPage from "./studio/page";
 
 export default function HomePage() {
-  redirect("/library")
+  return <StudioPage />;
 }

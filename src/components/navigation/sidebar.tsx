@@ -51,7 +51,7 @@ export function Sidebar() {
           Plataforma
         </div>
         {navigationItems.map((item) => {
-          const isActive = pathname === item.href || (item.href === "/library" && pathname === "/")
+          const isActive = pathname === item.href || (item.href === "/studio" && pathname === "/")
           const Icon = item.icon
 
           return (

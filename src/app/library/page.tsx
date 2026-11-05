@@ -331,11 +331,24 @@ export default function LibraryPage() {
         </div>
       </div>
 
-      {/* Content Section: Loading, Empty or Grid */}
+      {/* Content Section: Loading Skeletons, Empty or Grid */}
       {loading ? (
-        <div className="flex flex-col items-center justify-center py-24 text-center">
-          <RefreshCw className="h-8 w-8 animate-spin text-zinc-500 mb-3" />
-          <p className="text-sm text-zinc-400">Cargando videos desde Google Drive...</p>
+        <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-4 sm:gap-6">
+          {[1, 2, 3].map((n) => (
+            <div
+              key={n}
+              className="rounded-xl border border-zinc-800/60 bg-zinc-900/30 overflow-hidden animate-pulse"
+            >
+              <div className="aspect-video w-full bg-zinc-900/80 relative flex items-center justify-center">
+                <RefreshCw className="h-5 w-5 animate-spin text-zinc-700" />
+              </div>
+              <div className="p-4 space-y-3">
+                <div className="h-4 bg-zinc-800/80 rounded w-3/4" />
+                <div className="h-3 bg-zinc-800/50 rounded w-1/2" />
+                <div className="h-8 bg-zinc-800/40 rounded-lg w-full mt-2" />
+              </div>
+            </div>
+          ))}
         </div>
       ) : videos.length === 0 ? (
         /* Empty State with Actionable Guidance */

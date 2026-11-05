@@ -52,7 +52,8 @@ export async function GET() {
       q = `'${folderId}' in parents and mimeType contains 'video/' and trashed = false`
     }
 
-    const response = await drive.files.list({
+    // Ejecutar con timeout de seguridad de 3.5s para evitar que bloquee la carga de la página
+    const drivePromise = drive.files.list({
       q,
       fields: "files(id, name, createdTime, webViewLink, webContentLink, thumbnailLink)",
       supportsAllDrives: true,
@@ -61,7 +62,24 @@ export async function GET() {
       pageSize: 50,
     })
 
-    const files = response.data.files || []
+    const timeoutPromise = new Promise((_, reject) =>
+      setTimeout(() => reject(new Error("Timeout de conexión con Google Drive API")), 3500)
+    )
+
+    type DriveFileItem = {
+      id?: string | null;
+      name?: string | null;
+      createdTime?: string | null;
+      webViewLink?: string | null;
+      webContentLink?: string | null;
+      thumbnailLink?: string | null;
+    };
+
+    const response = (await Promise.race([drivePromise, timeoutPromise])) as {
+      data?: { files?: DriveFileItem[] };
+    };
+
+    const files = response?.data?.files || [];
     const videos = files.map((file) => ({
       id: file.id || "",
       title: file.name ? file.name.replace(/\.mp4$/i, "") : "Video sin título",
@@ -71,14 +89,21 @@ export async function GET() {
         (file.id ? `https://drive.google.com/uc?export=download&id=${file.id}` : ""),
       thumbnail: file.thumbnailLink || null,
       date: formatDate(file.createdTime),
-    }))
+    }));
 
-    return NextResponse.json({
-      configured: true,
-      folderConfigured: Boolean(folderId),
-      folderId: folderId || null,
-      videos,
-    })
+    return NextResponse.json(
+      {
+        configured: true,
+        folderConfigured: Boolean(folderId),
+        folderId: folderId || null,
+        videos,
+      },
+      {
+        headers: {
+          "Cache-Control": "public, s-maxage=30, stale-while-revalidate=60",
+        },
+      }
+    )
   } catch (error) {
     console.error("Error al obtener videos de Google Drive:", error)
     return NextResponse.json(

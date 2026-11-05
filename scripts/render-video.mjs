@@ -214,6 +214,10 @@ if (isHtmlMode && rawHtml) {
       }
     }
 
+    // Sincronizar animaciones de progreso CSS con la duración seleccionada
+    html = html.replace(/fillProgress\s+\d+s/gi, `fillProgress ${targetDuration}s`);
+    html = html.replace(/progressAnim\s+\d+s/gi, `progressAnim ${targetDuration}s`);
+
     return html;
   }
 
@@ -265,6 +269,7 @@ if (isHtmlMode && rawHtml) {
   console.log(`Destino MP4: ${outputMp4}`);
 
   const propsPath = path.join(process.cwd(), ".remotion-props.json");
+  remotionProps.durationInSeconds = duration;
   fs.writeFileSync(propsPath, JSON.stringify(remotionProps, null, 2), "utf-8");
   const entryPoint = path.join(process.cwd(), "src/remotion/entry.ts");
 

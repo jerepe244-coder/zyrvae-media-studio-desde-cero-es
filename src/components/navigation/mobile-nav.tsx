@@ -44,7 +44,7 @@ export function MobileBottomNav() {
   return (
     <nav className="md:hidden fixed bottom-0 inset-x-0 h-[calc(4rem+env(safe-area-inset-bottom,0px))] pb-[env(safe-area-inset-bottom,0px)] bg-zinc-950/95 backdrop-blur-xl border-t border-zinc-800/80 flex items-center justify-around z-40 px-6">
       {navigationItems.map((item) => {
-        const isActive = pathname === item.href || (item.href === "/library" && pathname === "/")
+        const isActive = pathname === item.href || (item.href === "/studio" && pathname === "/")
         const Icon = item.icon
 
         return (
