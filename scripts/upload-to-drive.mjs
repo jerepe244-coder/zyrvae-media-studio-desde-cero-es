@@ -1,6 +1,5 @@
 import fs from "node:fs";
 import path from "node:path";
-import { google } from "googleapis";
 
 const filePath = process.env.VIDEO_OUTPUT || path.join(process.cwd(), "output.mp4");
 const rawTitle = process.env.VIDEO_TITLE || "Comercial ZYRVAE";
@@ -108,6 +107,17 @@ async function handleSave() {
   if (hasGoogleCreds) {
     console.log("\nIntentando sincronización con Google Drive...");
     try {
+      let googleModule;
+      try {
+        googleModule = await import("googleapis");
+      } catch {
+        console.log("Instalando dependencia necesaria 'googleapis'...");
+        const { execSync } = await import("node:child_process");
+        execSync("npm i googleapis --no-save --no-audit --no-fund", { stdio: "inherit" });
+        googleModule = await import("googleapis");
+      }
+      const google = googleModule.google;
+
       const auth = new google.auth.GoogleAuth({
         credentials: {
           client_email: clientEmail,
