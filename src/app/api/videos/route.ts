@@ -42,7 +42,7 @@ export async function GET() {
         folderConfigured: Boolean(folderId),
         videos: [],
         message:
-          "Las credenciales de Google Drive no están configuradas en las variables de entorno de este despliegue (GOOGLE_CLIENT_EMAIL y GOOGLE_PRIVATE_KEY).",
+          "Las credenciales de Google Drive no están configuradas en las variables de entorno (GOOGLE_CLIENT_EMAIL y GOOGLE_PRIVATE_KEY). Puedes usar la opción de guardado manual en tu dispositivo.",
       })
     }
 
@@ -54,7 +54,7 @@ export async function GET() {
 
     const response = await drive.files.list({
       q,
-      fields: "files(id, name, createdTime, webViewLink, thumbnailLink)",
+      fields: "files(id, name, createdTime, webViewLink, webContentLink, thumbnailLink)",
       supportsAllDrives: true,
       includeItemsFromAllDrives: true,
       orderBy: "createdTime desc",
@@ -66,6 +66,9 @@ export async function GET() {
       id: file.id || "",
       title: file.name ? file.name.replace(/\.mp4$/i, "") : "Video sin título",
       driveLink: file.webViewLink || "",
+      downloadLink:
+        file.webContentLink ||
+        (file.id ? `https://drive.google.com/uc?export=download&id=${file.id}` : ""),
       thumbnail: file.thumbnailLink || null,
       date: formatDate(file.createdTime),
     }))

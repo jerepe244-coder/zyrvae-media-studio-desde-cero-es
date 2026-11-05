@@ -21,7 +21,10 @@ import {
   Printer,
   Smartphone,
   Eye,
-  Check
+  Check,
+  Download,
+  HardDrive,
+  FileDown
 } from "lucide-react"
 
 import { Button } from "@/components/ui/button"
@@ -136,6 +139,7 @@ export default function StudioPage() {
   // Video settings
   const [videoTitle, setVideoTitle] = React.useState<string>("Comercial ZYRVAE")
   const [duration, setDuration] = React.useState<string>("10s")
+  const [saveDestination, setSaveDestination] = React.useState<"device" | "drive">("device")
 
   // Preview state
   const [iframeKey, setIframeKey] = React.useState(0)
@@ -295,6 +299,21 @@ export default function StudioPage() {
     }
   }
 
+  // Download HTML file directly to local device storage
+  const handleDownloadHtmlFile = () => {
+    if (!htmlCode) return
+    const blob = new Blob([htmlCode], { type: "text/html;charset=utf-8" })
+    const url = URL.createObjectURL(blob)
+    const a = document.createElement("a")
+    a.href = url
+    const safeName = (videoTitle || "comercial-zyrvae").replace(/[/\\?%*:|"<>]/g, "_").trim()
+    a.download = `${safeName}.html`
+    document.body.appendChild(a)
+    a.click()
+    document.body.removeChild(a)
+    URL.revokeObjectURL(url)
+  }
+
   // Handle Render to MP4
   const handleRenderVideo = async () => {
     if (!htmlCode.trim() || isLoading) return
@@ -314,6 +333,7 @@ export default function StudioPage() {
           title: videoTitle.trim() || "Comercial ZYRVAE",
           html: htmlCode,
           duration: durationSeconds,
+          destination: saveDestination,
         }),
       })
 
@@ -323,9 +343,14 @@ export default function StudioPage() {
         throw new Error(data.details || data.error || "Error al solicitar la conversión a MP4.")
       }
 
+      const successMsg =
+        saveDestination === "device"
+          ? "¡Conversión iniciada! En unos minutos podrás descargar tu video MP4 directamente a este dispositivo."
+          : "¡Conversión iniciada! El video se renderizará y se sincronizará con tu Google Drive (Biblioteca)."
+
       setFeedback({
         type: "success",
-        message: "Video en proceso. En unos minutos aparecerá en tu Biblioteca (Drive)",
+        message: successMsg,
       })
       setShowResultModal(true)
     } catch (err: unknown) {
@@ -665,6 +690,54 @@ export default function StudioPage() {
                 </div>
               </div>
 
+              {/* Selector de Destino de Guardado (Manual vs Drive) */}
+              <div className="space-y-2 pt-2 border-t border-zinc-800/60">
+                <label className="text-xs font-semibold uppercase tracking-wider text-zinc-300 flex items-center justify-between">
+                  <span className="flex items-center gap-1.5">
+                    <HardDrive className="h-3.5 w-3.5 text-zinc-400" />
+                    ¿Dónde guardar el video?
+                  </span>
+                  <span className="text-[10px] text-zinc-400 font-normal">
+                    {saveDestination === "device" ? "📱 Guardar en Dispositivo" : "☁️ Guardar en Drive"}
+                  </span>
+                </label>
+                <div className="grid grid-cols-2 gap-2.5">
+                  <button
+                    type="button"
+                    disabled={isLoading}
+                    onClick={() => setSaveDestination("device")}
+                    className={`p-3 rounded-xl border text-left transition-all flex items-start gap-2.5 ${
+                      saveDestination === "device"
+                        ? "bg-indigo-600/20 border-indigo-500/80 text-white shadow-sm ring-1 ring-indigo-500/40"
+                        : "bg-zinc-950/50 border-zinc-800/80 text-zinc-400 hover:text-zinc-200 hover:border-zinc-700"
+                    }`}
+                  >
+                    <Download className={`h-4 w-4 mt-0.5 shrink-0 ${saveDestination === "device" ? "text-indigo-400" : "text-zinc-500"}`} />
+                    <div className="space-y-0.5">
+                      <p className="text-xs font-semibold text-zinc-200">En mi dispositivo</p>
+                      <p className="text-[10px] text-zinc-400 leading-tight">Descarga directa manual (PC / Móvil)</p>
+                    </div>
+                  </button>
+
+                  <button
+                    type="button"
+                    disabled={isLoading}
+                    onClick={() => setSaveDestination("drive")}
+                    className={`p-3 rounded-xl border text-left transition-all flex items-start gap-2.5 ${
+                      saveDestination === "drive"
+                        ? "bg-indigo-600/20 border-indigo-500/80 text-white shadow-sm ring-1 ring-indigo-500/40"
+                        : "bg-zinc-950/50 border-zinc-800/80 text-zinc-400 hover:text-zinc-200 hover:border-zinc-700"
+                    }`}
+                  >
+                    <HardDrive className={`h-4 w-4 mt-0.5 shrink-0 ${saveDestination === "drive" ? "text-emerald-400" : "text-zinc-500"}`} />
+                    <div className="space-y-0.5">
+                      <p className="text-xs font-semibold text-zinc-200">En Google Drive</p>
+                      <p className="text-[10px] text-zinc-400 leading-tight">Sincronización en la nube y Biblioteca</p>
+                    </div>
+                  </button>
+                </div>
+              </div>
+
               {/* Printing press automated explanation */}
               <div className="p-3.5 rounded-xl bg-zinc-950/70 border border-zinc-800/80 flex items-start gap-3">
                 <Printer className="h-4 w-4 text-indigo-400 mt-0.5 shrink-0" />
@@ -673,7 +746,7 @@ export default function StudioPage() {
                     Imprenta Automatizada con HyperFrames
                   </p>
                   <p className="text-[11px] text-zinc-400 leading-relaxed">
-                    Al pulsar convertir, enviamos el HTML exacto a la fábrica de GitHub Actions. HyperFrames renderiza cada fotograma en resolución vertical 1080×1920 y sube el archivo .mp4 listo para publicar a Google Drive.
+                    HyperFrames renderiza cada fotograma en resolución vertical 1080×1920 y genera el archivo .mp4 listo para descargar o sincronizar en tu Google Drive.
                   </p>
                 </div>
               </div>
@@ -692,16 +765,33 @@ export default function StudioPage() {
                   {isLoading ? (
                     <>
                       <Loader2 className="h-4 w-4 animate-spin text-white" />
-                      Enviando a la fábrica de GitHub Actions...
+                      Enviando a la fábrica de renderizado...
+                    </>
+                  ) : saveDestination === "device" ? (
+                    <>
+                      <Download className="h-4 w-4 text-white" />
+                      Renderizar y Descargar a mi Dispositivo
                     </>
                   ) : (
                     <>
-                      <Clapperboard className="h-4 w-4 text-white" />
-                      Convertir a MP4
+                      <HardDrive className="h-4 w-4 text-white" />
+                      Renderizar y Guardar en Google Drive
                     </>
                   )}
                 </Button>
-                {!htmlCode.trim() && (
+                {htmlCode.trim() ? (
+                  <div className="flex items-center justify-center gap-4 pt-2.5">
+                    <button
+                      type="button"
+                      onClick={handleDownloadHtmlFile}
+                      className="text-zinc-400 hover:text-zinc-200 transition-colors inline-flex items-center gap-1.5 text-[11px]"
+                      title="Guardar código HTML del anuncio en este dispositivo"
+                    >
+                      <FileDown className="h-3.5 w-3.5 text-zinc-400" />
+                      Descargar archivo .html a este dispositivo
+                    </button>
+                  </div>
+                ) : (
                   <p className="text-[11px] text-zinc-400 text-center mt-2">
                     Sube un archivo o pega el código HTML arriba para habilitar la conversión.
                   </p>
@@ -849,19 +939,15 @@ export default function StudioPage() {
                 <AlertCircle className="h-6 w-6" />
               )}
             </div>
-            <DialogTitle className="text-lg text-zinc-100">
+            <DialogTitle className="text-lg text-zinc-100 flex items-center gap-2">
               {feedback?.type === "success"
-                ? "¡Conversión a MP4 iniciada!"
+                ? saveDestination === "device"
+                  ? "¡Conversión para tu Dispositivo iniciada!"
+                  : "¡Conversión hacia Google Drive iniciada!"
                 : "Error al iniciar la conversión"}
             </DialogTitle>
             <DialogDescription className="text-zinc-300 text-sm leading-relaxed pt-1">
-              {feedback?.type === "success" ? (
-                <span className="text-emerald-300 font-medium text-base block mt-1">
-                  Video en proceso. En unos minutos aparecerá en tu Biblioteca (Drive)
-                </span>
-              ) : (
-                feedback?.message
-              )}
+              {feedback?.message}
             </DialogDescription>
           </DialogHeader>
 
@@ -877,24 +963,70 @@ export default function StudioPage() {
                   <span className="text-zinc-200 font-mono">{duration}</span>
                 </div>
                 <div className="flex items-center justify-between">
-                  <span className="text-zinc-400">Motor:</span>
-                  <span className="text-zinc-200 font-mono">HyperFrames (GitHub Actions)</span>
-                </div>
-                <div className="flex items-center justify-between">
                   <span className="text-zinc-400">Destino:</span>
-                  <span className="text-emerald-400 font-medium">Google Drive (Biblioteca)</span>
+                  <span className="text-indigo-300 font-medium flex items-center gap-1">
+                    {saveDestination === "device" ? (
+                      <>
+                        <Download className="h-3.5 w-3.5 text-indigo-400" />
+                        Almacenamiento en este Dispositivo
+                      </>
+                    ) : (
+                      <>
+                        <HardDrive className="h-3.5 w-3.5 text-emerald-400" />
+                        Google Drive (Biblioteca)
+                      </>
+                    )}
+                  </span>
                 </div>
               </div>
 
-              <div className="p-3 rounded-lg bg-zinc-900/40 border border-zinc-800/60 text-xs text-zinc-400">
-                <span>Puedes monitorear el renderizado y la subida en tiempo real: </span>
+              {/* Botones de acción y descarga directa */}
+              <div className="p-3 rounded-lg bg-zinc-950/80 border border-zinc-800 space-y-2">
+                <p className="text-xs font-semibold text-zinc-300">
+                  Opciones disponibles para este video:
+                </p>
+                <div className="flex flex-col gap-2">
+                  <a
+                    href="https://github.com/jerepe244-coder/zyrvae-media-studio-desde-cero-es/actions/workflows/render-video.yml"
+                    target="_blank"
+                    rel="noopener noreferrer"
+                    className="w-full"
+                  >
+                    <Button
+                      variant="outline"
+                      className="w-full justify-between text-xs border-zinc-800 text-zinc-200 hover:bg-zinc-900 h-9"
+                    >
+                      <span className="flex items-center gap-2">
+                        <Download className="h-3.5 w-3.5 text-indigo-400" />
+                        Descargar Video MP4 a mi Dispositivo
+                      </span>
+                      <ExternalLink className="h-3 w-3 text-zinc-500" />
+                    </Button>
+                  </a>
+
+                  <Button
+                    variant="outline"
+                    onClick={handleDownloadHtmlFile}
+                    className="w-full justify-between text-xs border-zinc-800 text-zinc-200 hover:bg-zinc-900 h-9"
+                  >
+                    <span className="flex items-center gap-2">
+                      <FileDown className="h-3.5 w-3.5 text-amber-400" />
+                      Descargar archivo .HTML a este Dispositivo
+                    </span>
+                    <Download className="h-3 w-3 text-zinc-500" />
+                  </Button>
+                </div>
+              </div>
+
+              <div className="p-3 rounded-lg bg-zinc-900/40 border border-zinc-800/60 text-xs text-zinc-400 flex items-center justify-between">
+                <span>Ver progreso en tiempo real:</span>
                 <a
                   href="https://github.com/jerepe244-coder/zyrvae-media-studio-desde-cero-es/actions/workflows/render-video.yml"
                   target="_blank"
                   rel="noopener noreferrer"
-                  className="text-indigo-400 hover:text-indigo-300 underline font-medium inline-flex items-center gap-1 ml-1"
+                  className="text-indigo-400 hover:text-indigo-300 underline font-medium inline-flex items-center gap-1"
                 >
-                  Ver en GitHub Actions
+                  GitHub Actions
                   <ExternalLink className="h-3 w-3" />
                 </a>
               </div>

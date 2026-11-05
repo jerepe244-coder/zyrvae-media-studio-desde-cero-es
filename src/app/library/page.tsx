@@ -15,6 +15,7 @@ import {
   ExternalLink,
   AlertTriangle,
   CheckCircle2,
+  Download,
 } from "lucide-react"
 
 import { Button } from "@/components/ui/button"
@@ -44,6 +45,7 @@ interface DriveVideo {
   id: string
   title: string
   driveLink: string
+  downloadLink?: string
   thumbnail?: string | null
   date: string
 }
@@ -501,20 +503,41 @@ export default function LibraryPage() {
 
                     {/* Bottom Action Footer */}
                     <div className="px-4 pb-4 pt-1 border-t border-zinc-800/40 flex items-center justify-between gap-2">
-                      {video.driveLink ? (
+                      {video.downloadLink ? (
                         <a
-                          href={video.driveLink}
+                          href={video.downloadLink}
                           target="_blank"
                           rel="noopener noreferrer"
-                          className="w-full"
+                          className="flex-1"
+                          title="Descargar video MP4 a este dispositivo"
                         >
                           <Button
                             variant="outline"
                             size="sm"
                             className="w-full text-xs font-medium border-zinc-800 hover:bg-zinc-800 hover:text-zinc-100 transition-colors gap-1.5"
                           >
-                            Ver en Google Drive
-                            <ExternalLink className="h-3 w-3" />
+                            <Download className="h-3 w-3 text-indigo-400" />
+                            Descargar
+                          </Button>
+                        </a>
+                      ) : null}
+
+                      {video.driveLink ? (
+                        <a
+                          href={video.driveLink}
+                          target="_blank"
+                          rel="noopener noreferrer"
+                          className={video.downloadLink ? "flex-1" : "w-full"}
+                          title="Abrir en Google Drive"
+                        >
+                          <Button
+                            variant="outline"
+                            size="sm"
+                            className="w-full text-xs font-medium border-zinc-800 hover:bg-zinc-800 hover:text-zinc-100 transition-colors gap-1.5"
+                          >
+                            <HardDrive className="h-3 w-3 text-emerald-400" />
+                            Ver en Drive
+                            <ExternalLink className="h-3 w-3 text-zinc-500" />
                           </Button>
                         </a>
                       ) : (
