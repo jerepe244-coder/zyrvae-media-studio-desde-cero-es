@@ -2,13 +2,29 @@ import { NextResponse } from "next/server";
 
 export const dynamic = "force-dynamic";
 
+/**
+ * Obtiene la URL configurada del microservicio dedicado en Render.com o Railway.
+ * Acepta múltiples nombres de variables de entorno y cuenta con la URL por defecto
+ * del Blueprint de Render (https://zyrvae-video-renderer.onrender.com).
+ */
+export function getRendererUrl(): string {
+  const rawUrl = (
+    process.env.RENDERER_URL ||
+    process.env.RENDER_URL ||
+    process.env.RENDER_BACKEND_URL ||
+    process.env.RENDERER_SERVICE_URL ||
+    process.env.RENDER_SERVICE_URL ||
+    process.env.VIDEO_RENDERER_URL ||
+    process.env.NEXT_PUBLIC_RENDERER_URL ||
+    "https://zyrvae-video-renderer.onrender.com"
+  ).trim();
+
+  return rawUrl.replace(/\/$/, "");
+}
+
 // Verificar el estado de la conexión con el motor de renderizado dedicado
 export async function GET() {
-  const backendUrl =
-    process.env.RENDERER_URL ||
-    process.env.RENDER_BACKEND_URL ||
-    process.env.VIDEO_RENDERER_URL ||
-    process.env.NEXT_PUBLIC_RENDERER_URL;
+  const backendUrl = getRendererUrl();
 
   if (backendUrl) {
     try {
@@ -50,13 +66,7 @@ export async function GET() {
 
 export async function POST(request: Request) {
   try {
-    const backendUrl = (
-      process.env.RENDERER_URL ||
-      process.env.RENDER_BACKEND_URL ||
-      process.env.VIDEO_RENDERER_URL ||
-      process.env.NEXT_PUBLIC_RENDERER_URL ||
-      ""
-    ).trim();
+    const backendUrl = getRendererUrl();
 
     const rawToken = process.env.GITHUB_TOKEN || process.env.GH_TOKEN || "";
     const token = rawToken.trim();

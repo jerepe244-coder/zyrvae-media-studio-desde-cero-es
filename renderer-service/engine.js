@@ -8,6 +8,60 @@ import ffmpegStatic from "ffmpeg-static";
 // Obtener ruta del binario FFmpeg (usar variable de entorno o binario estático)
 const FFMPEG_PATH = process.env.FFMPEG_PATH || ffmpegStatic || "ffmpeg";
 
+// Script de reloj virtual para control determinista frame por frame
+const VIRTUAL_CLOCK_SCRIPT = `
+(function() {
+  if (window.__virtualClockInitialized) return;
+  window.__virtualClockInitialized = true;
+  window.__virtualTime = 0;
+  
+  var origPerfNow = window.performance ? window.performance.now.bind(window.performance) : null;
+  if (origPerfNow) {
+    try { window.performance.now = function() { return window.__virtualTime; }; } catch (e) {}
+  }
+  
+  var origDateNow = Date.now.bind(Date);
+  var startTime = origDateNow();
+  try { Date.now = function() { return startTime + window.__virtualTime; }; } catch (e) {}
+
+  var rafCallbacks = new Set();
+  window.__rafCallbacks = rafCallbacks;
+  window.requestAnimationFrame = function(cb) {
+    var id = Math.random();
+    rafCallbacks.add({ id: id, cb: cb });
+    return id;
+  };
+  window.cancelAnimationFrame = function(id) {
+    rafCallbacks.forEach(function(item) {
+      if (item.id === id) { rafCallbacks.delete(item); }
+    });
+  };
+
+  window.__stepVirtualTime = function(newTimeMs) {
+    window.__virtualTime = newTimeMs;
+    var toRun = Array.from(rafCallbacks);
+    rafCallbacks.clear();
+    for (var i = 0; i < toRun.length; i++) {
+      try { toRun[i].cb(newTimeMs); } catch (e) { console.error(e); }
+    }
+    if (document.getAnimations) {
+      try {
+        var animations = document.getAnimations({ subtree: true });
+        for (var j = 0; j < animations.length; j++) {
+          try {
+            animations[j].pause();
+            animations[j].currentTime = newTimeMs;
+          } catch (err) {}
+        }
+      } catch (e) {}
+    }
+    if (typeof window.__seekToTime === "function") {
+      try { window.__seekToTime(newTimeMs); } catch (e) {}
+    }
+  };
+})();
+`;
+
 /**
  * Prepara el código HTML para que tenga la estructura adecuada de resolución y estilos base.
  */
@@ -31,12 +85,20 @@ export function sanitizeHtml(rawHtml, width = 1080, height = 1920) {
       font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
     }
   </style>
+  <script>${VIRTUAL_CLOCK_SCRIPT}</script>
 </head>
 <body>
   ${html}
 </body>
 </html>`;
   } else {
+    // Inyectar el script del reloj virtual en el head
+    if (html.toLowerCase().includes("<head")) {
+      html = html.replace(/<head([^>]*)>/i, `<head$1>\n  <script>${VIRTUAL_CLOCK_SCRIPT}</script>`);
+    } else {
+      html = `<script>${VIRTUAL_CLOCK_SCRIPT}</script>\n` + html;
+    }
+
     // Si ya tiene head pero no charset UTF-8
     if (!html.toLowerCase().includes("charset")) {
       html = html.replace(/<head([^>]*)>/i, '<head$1>\n  <meta charset="UTF-8">');
@@ -174,6 +236,9 @@ export async function renderHtmlToMp4({
       timeout: 30000,
     });
 
+    // Asegurar ejecución del reloj virtual si setContent no ejecutó scripts inline
+    await page.evaluate(VIRTUAL_CLOCK_SCRIPT).catch(() => {});
+
     // Pequeña espera para estabilización de fuentes y estilos
     await new Promise((r) => setTimeout(r, 200));
 
@@ -218,7 +283,17 @@ export async function renderHtmlToMp4({
 
       // Avanzar el reloj virtual
       await page.evaluate((timeMs) => {
-        window.__stepVirtualTime(timeMs);
+        if (typeof window.__stepVirtualTime === "function") {
+          window.__stepVirtualTime(timeMs);
+        } else if (document.getAnimations) {
+          const animations = document.getAnimations({ subtree: true });
+          for (const anim of animations) {
+            try {
+              anim.pause();
+              anim.currentTime = timeMs;
+            } catch {}
+          }
+        }
       }, currentMs);
 
       // Tomar captura JPEG en buffer (ultra-rápido y bajo consumo de memoria)

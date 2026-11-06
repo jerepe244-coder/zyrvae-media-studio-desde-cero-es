@@ -16,6 +16,42 @@
       "created_at": "2026-11-05T17:05:12.173Z",
       "sender": "ios",
       "is_cancelled": false
+    },
+    {
+      "id": "275e8d34-50eb-40e0-81d1-9785f393f21e",
+      "role": "user",
+      "content": "explícame lo de conectar la url con vercel? que pongo el key y value?",
+      "status": "pending",
+      "model": "gemini-3.8-flash-high",
+      "client_type": "gemini-bridge",
+      "parent_message_id": null,
+      "created_at": "2026-11-06T01:54:13.833Z",
+      "sender": "ios",
+      "is_cancelled": false
+    },
+    {
+      "id": "64c0e59c-576d-4335-9e94-34b8a1147b72",
+      "role": "agent",
+      "content": "Para que **Vercel** pueda conectarse con el servidor que genera los videos MP4 (desplegado en **Render.com** o **Railway**), debes configurar una **Variable de Entorno** en Vercel.\n\n---\n\n### 1. ¿Qué poner exactamente en Key y Value?\n\nEn la pantalla de Vercel (**Environment Variables**):\n\n* **Key (Clave / Nombre):**\n  ```text\n  RENDERER_URL\n  ```\n  *(Debe ir en mayúsculas y exactamente así).*\n\n* **Value (Valor):**\n  ```text\n  https://tu-servicio.onrender.com\n  ```\n  *(Sustituye por la URL pública que te dio **Render.com** o **Railway**, por ejemplo `https://zyrvae-video-renderer.onrender.com` o `https://renderer-service-production.up.railway.app`. No pongas barra `/` al final).*\n\n---\n\n### 2. Pasos detallados en el panel de Vercel\n\n1. Entra a tu cuenta en [Vercel](https://vercel.com) y abre tu proyecto (**zyrvae-media-studio**).\n2. Haz clic en la pestaña superior **Settings**.\n3. En el menú lateral izquierdo, selecciona **Environment Variables**.\n4. Llena el formulario:\n   * **Key:** `RENDERER_URL`\n   * **Value:** Tu URL de Render o Railway (ej. `https://zyrvae-video-renderer.onrender.com`).\n   * **Environment:** Deja marcados los 3: **Production**, **Preview** y **Development**.\n5. Haz clic en el botón **Save** (o **Add**).\n\n---\n\n### 3. Paso crucial: Hacer Redeploy en Vercel\n\nLas variables de entorno en Vercel no se aplican a los despliegues ya hechos; se activan en el siguiente despliegue:\n\n1. En Vercel, ve a la pestaña **Deployments**.\n2. En el despliegue más reciente, haz clic en los **tres puntos (`...`)** a la derecha.\n3. Elige **Redeploy**.\n\n---\n\n### 4. ¿Cómo comprobar que quedó conectado?\n\nAbre en tu navegador la ruta `/api/render` de tu web en Vercel (por ejemplo: `https://tu-proyecto.vercel.app/api/render`).\n\nVerás una respuesta JSON como esta confirmando la conexión:\n```json\n{\n  \"status\": \"connected\",\n  \"engine\": \"Render.com / Railway Dedicated Microservice\",\n  \"url\": \"https://tu-servicio.onrender.com\"\n}\n```\n\nPara ver la guía completa con capturas o pasos de Render y Railway, puedes consultar el documento [DEPLOYMENT_RENDER_RAILWAY.md](https://github.com/jerepe244-coder/zyrvae-media-studio-desde-cero-es/blob/main/DEPLOYMENT_RENDER_RAILWAY.md) y la lógica en [`src/app/api/render/route.ts`](https://github.com/jerepe244-coder/zyrvae-media-studio-desde-cero-es/blob/main/src/app/api/render/route.ts#L6-L36).",
+      "status": "completed",
+      "model": "gemini-3.8-flash-high",
+      "client_type": "gemini-bridge",
+      "parent_message_id": "275e8d34-50eb-40e0-81d1-9785f393f21e",
+      "created_at": "2026-11-06T01:54:42.162Z",
+      "sender": "macOS",
+      "is_cancelled": false
+    },
+    {
+      "id": "223ce0e3-7e54-4068-ab3a-6fda3e04210a",
+      "role": "user",
+      "content": "okey, ya hice todos los pasos, queres revisar y comprobar qué ande?",
+      "status": "pending",
+      "model": "gemini-3.8-flash-high",
+      "client_type": "gemini-bridge",
+      "parent_message_id": null,
+      "created_at": "2026-11-06T02:04:19.087Z",
+      "sender": "ios",
+      "is_cancelled": false
     }
   ]
 }
