@@ -136,7 +136,7 @@ export async function renderHtmlToMp4({
   console.log(`[Renderer] Iniciando renderizado: ${width}x${height} @ ${fps}fps, duración: ${duration}s (${totalFrames} fotogramas)`);
   console.log(`[Renderer] FFmpeg binary: ${FFMPEG_PATH}`);
 
-  // 1. Lanzar Puppeteer optimizado para servidores en la nube (Render.com, Railway)
+  // 1. Lanzar Puppeteer optimizado para servidores con recursos limitados (Render.com 512MB RAM, Railway)
   const browser = await puppeteer.launch({
     headless: "shell",
     executablePath: process.env.PUPPETEER_EXECUTABLE_PATH || undefined,
@@ -148,9 +148,18 @@ export async function renderHtmlToMp4({
       "--disable-software-rasterizer",
       "--no-first-run",
       "--no-zygote",
-      "--single-process",
       "--disable-extensions",
       "--mute-audio",
+      "--js-flags=--max-old-space-size=192",
+      "--disable-background-networking",
+      "--disable-background-timer-throttling",
+      "--disable-backgrounding-occluded-windows",
+      "--disable-breakpad",
+      "--disable-client-side-phishing-detection",
+      "--disable-default-apps",
+      "--disable-features=Translate,BackForwardCache,AcceptCHFrame,MediaRouter,OptimizationHints",
+      "--disable-ipc-flooding-protection",
+      "--disable-renderer-backgrounding",
       `--window-size=${width},${height}`,
     ],
     defaultViewport: {
@@ -250,8 +259,8 @@ export async function renderHtmlToMp4({
       "-r", String(fps),
       "-i", "-",
       "-c:v", "libx264",
-      "-preset", "faster",
-      "-crf", "22",
+      "-preset", "ultrafast",
+      "-crf", "24",
       "-pix_fmt", "yuv420p",
       "-movflags", "+faststart",
       outputPath,
@@ -299,7 +308,7 @@ export async function renderHtmlToMp4({
       // Tomar captura JPEG en buffer (ultra-rápido y bajo consumo de memoria)
       const screenshotBuffer = await page.screenshot({
         type: "jpeg",
-        quality: 90,
+        quality: 80,
         optimizeForSpeed: true,
       });
 

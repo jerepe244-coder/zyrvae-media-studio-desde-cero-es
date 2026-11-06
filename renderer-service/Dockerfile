@@ -30,5 +30,5 @@ COPY . .
 # Exponer el puerto
 EXPOSE 8080
 
-# Iniciar el microservicio
-CMD ["node", "server.js"]
+# Iniciar el microservicio con límite de memoria adaptado a la capa gratuita
+CMD ["node", "--max-old-space-size=256", "server.js"]

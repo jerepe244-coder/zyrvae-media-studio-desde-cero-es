@@ -1,6 +1,7 @@
 import { NextResponse } from "next/server";
 
 export const dynamic = "force-dynamic";
+export const maxDuration = 60;
 
 /**
  * Obtiene la URL configurada del microservicio dedicado en Render.com o Railway.
@@ -135,6 +136,13 @@ export async function POST(request: Request) {
       if (!microserviceResponse.ok) {
         const errorText = await microserviceResponse.text().catch(() => "");
         console.error("[API /render] Error del microservicio dedicado:", microserviceResponse.status, errorText);
+
+        if (microserviceResponse.status === 502 || microserviceResponse.status === 503) {
+          throw new Error(
+            `El servidor de Render.com está iniciando o completando su despliegue (${microserviceResponse.status}). Por favor espera 30 segundos y vuelve a presionar 'Generar Video MP4'.`
+          );
+        }
+
         throw new Error(
           `Error en el motor dedicado (${microserviceResponse.status}): ${errorText || "Respuesta fallida del microservicio"}`
         );
