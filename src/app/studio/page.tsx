@@ -190,6 +190,10 @@ export default function StudioPage() {
   // Duración por defecto en 15s para conversión ultrarrápida (configurable a 30s, 60s o custom)
   const [durationSeconds, setDurationSeconds] = React.useState<number>(15);
 
+  // Formato / Proporción de video y Modo Publicación Limpio (sin paneles ni controles)
+  const [aspectRatio, setAspectRatio] = React.useState<"9:16" | "16:9" | "1:1">("9:16");
+  const [cleanVideoMode, setCleanVideoMode] = React.useState<boolean>(true);
+
   // Estado del código HTML y versión debounced para que la página nunca se trabe al escribir o pegar
   const [htmlCode, setHtmlCode] = React.useState<string>(() => createSampleAdHtml(15));
   const [debouncedHtml, setDebouncedHtml] = React.useState<string>(() => createSampleAdHtml(15));
@@ -218,6 +222,49 @@ export default function StudioPage() {
   // Referencia y escala para el iframe HTML responsivo
   const phoneContainerRef = React.useRef<HTMLDivElement>(null);
   const [previewScale, setPreviewScale] = React.useState<number>(0.26);
+
+  // Dimensiones según la proporción seleccionada
+  const dimensions = React.useMemo(() => {
+    switch (aspectRatio) {
+      case "16:9":
+        return { width: 1920, height: 1080, label: "16:9 Horizontal (YouTube)" };
+      case "1:1":
+        return { width: 1080, height: 1080, label: "1:1 Cuadrado (Instagram)" };
+      case "9:16":
+      default:
+        return { width: 1080, height: 1920, label: "9:16 Vertical (TikTok/Reels)" };
+    }
+  }, [aspectRatio]);
+
+  // HTML limpio para vista previa sin paneles interactivos
+  const previewHtml = React.useMemo(() => {
+    if (!cleanVideoMode) return debouncedHtml;
+    const cleanStyle = `<style id="__zyrvae_clean_preview">
+      .panel, #panel, .controls, #controls, .toolbar, #toolbar, .sidebar, #sidebar,
+      .player-controls, .video-controls, .control-bar, .playback-bar,
+      .vjs-control-bar, .plyr__controls, .jw-controls,
+      button[class*="play"], button[id*="play"], [aria-label*="play" i], [aria-label*="reproducir" i],
+      .play-btn, .play-button, .btn-play, #play-button, #playBtn, .btn-reproducir,
+      .timeline, #timeline {
+        display: none !important;
+        opacity: 0 !important;
+        visibility: hidden !important;
+        pointer-events: none !important;
+      }
+      video, canvas, .video, #video, .video-container, .player, #player, .composition, .canvas, #canvas, .main-stage {
+        max-width: 100% !important;
+        max-height: 100% !important;
+        width: 100% !important;
+        height: 100% !important;
+        object-fit: contain !important;
+        margin: 0 auto !important;
+      }
+    </style>`;
+    if (debouncedHtml.includes("<head>")) {
+      return debouncedHtml.replace("<head>", `<head>${cleanStyle}`);
+    }
+    return `${cleanStyle}${debouncedHtml}`;
+  }, [debouncedHtml, cleanVideoMode]);
 
   // Debounce del HTML para la vista previa: evita recrear el iframe en cada tecla o pegado grande
   React.useEffect(() => {
@@ -254,20 +301,20 @@ export default function StudioPage() {
     };
   }, []);
 
-  // Calcular escala para el visor 9:16 (1080x1920)
+  // Calcular escala para el visor según resolución activa
   React.useEffect(() => {
     const updateScale = () => {
       if (phoneContainerRef.current) {
         const width = phoneContainerRef.current.clientWidth;
         if (width > 0) {
-          setPreviewScale((width - 24) / 1080);
+          setPreviewScale((width - 24) / dimensions.width);
         }
       }
     };
     updateScale();
     window.addEventListener("resize", updateScale);
     return () => window.removeEventListener("resize", updateScale);
-  }, [mobileTab]);
+  }, [mobileTab, dimensions.width]);
 
   // Cambiar duración y sincronizar con el código HTML si aplica
   const handleChangeDuration = (sec: number) => {
@@ -332,8 +379,9 @@ export default function StudioPage() {
       title: safeTitle,
       duration: durationSeconds,
       fps: 24,
-      width: 1080,
-      height: 1920,
+      width: dimensions.width,
+      height: dimensions.height,
+      cleanVideo: cleanVideoMode,
       download: true,
     };
 
@@ -410,8 +458,9 @@ export default function StudioPage() {
         mp4Blob = await renderHtmlToMp4InBrowser({
           html: htmlCode,
           durationSeconds,
-          width: 1080,
-          height: 1920,
+          width: dimensions.width,
+          height: dimensions.height,
+          cleanVideo: cleanVideoMode,
           onProgress: (pct, statusText) => {
             setProgressPercent(pct);
             setProgressStatus(statusText);
@@ -714,6 +763,84 @@ export default function StudioPage() {
                 </div>
               </div>
 
+              {/* Formato y Proporción del Video */}
+              <div className="space-y-2 pt-2 border-t border-zinc-800/60">
+                <div className="flex items-center justify-between">
+                  <label className="text-xs font-medium text-zinc-300 flex items-center gap-1.5">
+                    <Smartphone className="h-3.5 w-3.5 text-indigo-400" />
+                    3. Formato y Resolución
+                  </label>
+                  <span className="text-[11px] font-mono text-indigo-400 font-semibold">
+                    {dimensions.width}×{dimensions.height}
+                  </span>
+                </div>
+
+                <div className="grid grid-cols-3 gap-2">
+                  <button
+                    type="button"
+                    disabled={isLoading}
+                    onClick={() => setAspectRatio("9:16")}
+                    className={`py-2 px-2 rounded-xl border text-center transition-all ${
+                      aspectRatio === "9:16"
+                        ? "bg-indigo-600/20 border-indigo-500/80 text-white font-semibold shadow-sm ring-1 ring-indigo-500/40"
+                        : "bg-zinc-950/50 border-zinc-800/80 text-zinc-400 hover:text-zinc-200"
+                    }`}
+                  >
+                    <span className="text-xs font-semibold block">9:16 Vertical</span>
+                    <p className="text-[10px] text-zinc-500 mt-0.5">TikTok / Reels</p>
+                  </button>
+
+                  <button
+                    type="button"
+                    disabled={isLoading}
+                    onClick={() => setAspectRatio("16:9")}
+                    className={`py-2 px-2 rounded-xl border text-center transition-all ${
+                      aspectRatio === "16:9"
+                        ? "bg-indigo-600/20 border-indigo-500/80 text-white font-semibold shadow-sm ring-1 ring-indigo-500/40"
+                        : "bg-zinc-950/50 border-zinc-800/80 text-zinc-400 hover:text-zinc-200"
+                    }`}
+                  >
+                    <span className="text-xs font-semibold block">16:9 Horizontal</span>
+                    <p className="text-[10px] text-zinc-500 mt-0.5">YouTube / Web</p>
+                  </button>
+
+                  <button
+                    type="button"
+                    disabled={isLoading}
+                    onClick={() => setAspectRatio("1:1")}
+                    className={`py-2 px-2 rounded-xl border text-center transition-all ${
+                      aspectRatio === "1:1"
+                        ? "bg-indigo-600/20 border-indigo-500/80 text-white font-semibold shadow-sm ring-1 ring-indigo-500/40"
+                        : "bg-zinc-950/50 border-zinc-800/80 text-zinc-400 hover:text-zinc-200"
+                    }`}
+                  >
+                    <span className="text-xs font-semibold block">1:1 Cuadrado</span>
+                    <p className="text-[10px] text-zinc-500 mt-0.5">Post Feed</p>
+                  </button>
+                </div>
+              </div>
+
+              {/* Modo Publicación: Video Limpio (Eliminar Paneles y Botones de Reproducir) */}
+              <div className="p-3 rounded-xl bg-zinc-950/60 border border-zinc-800/80 space-y-1.5">
+                <label className="flex items-center gap-2 cursor-pointer select-none">
+                  <input
+                    type="checkbox"
+                    checked={cleanVideoMode}
+                    disabled={isLoading}
+                    onChange={(e) => setCleanVideoMode(e.target.checked)}
+                    className="w-4 h-4 rounded border-zinc-700 bg-zinc-900 text-indigo-600 focus:ring-indigo-500 focus:ring-offset-zinc-950"
+                  />
+                  <span className="text-xs font-semibold text-zinc-200 flex items-center gap-1.5">
+                    <Sparkles className="h-3.5 w-3.5 text-amber-400" />
+                    Modo Publicación (Video Limpio sin Paneles)
+                  </span>
+                </label>
+                <p className="text-[11px] text-zinc-400 leading-normal pl-6">
+                  Oculta automáticamente barras de control, botones de Play y paneles laterales del código HTML.
+                  Activa la reproducción automática de animaciones y videos fotograma a fotograma para que el MP4 quede listo para subir a redes.
+                </p>
+              </div>
+
               {/* Barra de Progreso en Vivo durante el Renderizado */}
               {isLoading && (
                 <div className="p-3.5 rounded-xl bg-zinc-950/90 border border-indigo-500/40 space-y-2">
@@ -787,7 +914,7 @@ export default function StudioPage() {
                 variant="outline"
                 className="text-[10px] font-mono border-zinc-800 text-zinc-400"
               >
-                1080 × 1920
+                {dimensions.width} × {dimensions.height}
               </Badge>
             </div>
           </div>
@@ -795,16 +922,24 @@ export default function StudioPage() {
           {/* Smartphone Mockup Container */}
           <div
             ref={phoneContainerRef}
-            className="relative w-full max-w-[280px] xs:max-w-[320px] sm:max-w-[340px] aspect-[9/16] rounded-[2.5rem] p-3 sm:p-3.5 bg-gradient-to-b from-zinc-800 via-zinc-900 to-zinc-950 border-[4px] sm:border-[5px] border-zinc-800 shadow-2xl shadow-black ring-1 ring-zinc-700/50 flex flex-col"
+            className={`relative w-full max-w-[280px] xs:max-w-[320px] sm:max-w-[340px] ${
+              aspectRatio === "16:9"
+                ? "aspect-[16/9] rounded-2xl max-w-[420px]"
+                : aspectRatio === "1:1"
+                ? "aspect-square rounded-2xl"
+                : "aspect-[9/16] rounded-[2.5rem]"
+            } p-3 sm:p-3.5 bg-gradient-to-b from-zinc-800 via-zinc-900 to-zinc-950 border-[4px] sm:border-[5px] border-zinc-800 shadow-2xl shadow-black ring-1 ring-zinc-700/50 flex flex-col`}
           >
-            {/* Dynamic Island */}
-            <div className="absolute top-3.5 sm:top-4 left-1/2 -translate-x-1/2 z-30 pointer-events-none">
-              <div className="w-20 sm:w-24 h-3.5 sm:h-4 bg-zinc-950 rounded-full border border-zinc-800/80 flex items-center justify-end px-2">
-                <div className="w-1.5 sm:w-2 h-1.5 sm:h-2 rounded-full bg-zinc-800" />
+            {/* Dynamic Island (en 9:16) */}
+            {aspectRatio === "9:16" && (
+              <div className="absolute top-3.5 sm:top-4 left-1/2 -translate-x-1/2 z-30 pointer-events-none">
+                <div className="w-20 sm:w-24 h-3.5 sm:h-4 bg-zinc-950 rounded-full border border-zinc-800/80 flex items-center justify-end px-2">
+                  <div className="w-1.5 sm:w-2 h-1.5 sm:h-2 rounded-full bg-zinc-800" />
+                </div>
               </div>
-            </div>
+            )}
 
-            {/* Pantalla del Smartphone */}
+            {/* Pantalla del Mockup */}
             <div className="relative flex-1 rounded-[1.8rem] overflow-hidden bg-zinc-950 border border-zinc-800/80 flex flex-col">
               <div className="relative w-full h-full overflow-hidden bg-black flex items-center justify-center">
                 {isLoading ? (
@@ -821,8 +956,8 @@ export default function StudioPage() {
                 ) : (
                   <div
                     style={{
-                      width: 1080,
-                      height: 1920,
+                      width: dimensions.width,
+                      height: dimensions.height,
                       transform: `scale(${previewScale})`,
                       transformOrigin: "center center",
                     }}
@@ -830,10 +965,11 @@ export default function StudioPage() {
                   >
                     <iframe
                       key={iframeKey}
-                      srcDoc={debouncedHtml || "<body style='background:#09090b;'></body>"}
+                      srcDoc={previewHtml || "<body style='background:#09090b;'></body>"}
                       title="Previsualización de Código HTML"
                       sandbox="allow-scripts"
-                      className="w-[1080px] h-[1920px] border-0 bg-zinc-950"
+                      style={{ width: dimensions.width, height: dimensions.height }}
+                      className="border-0 bg-zinc-950"
                     />
                   </div>
                 )}
@@ -842,7 +978,7 @@ export default function StudioPage() {
                 <div className="absolute top-6 left-3.5 z-20 pointer-events-none flex items-center gap-1.5 px-2.5 py-1 rounded-full bg-zinc-950/80 border border-zinc-800/80 backdrop-blur-md text-[10px] text-zinc-300 font-mono">
                   <span className="w-1.5 h-1.5 rounded-full bg-emerald-400 animate-pulse" />
                   <span>
-                    HTML LIVE • {durationSeconds === 60 ? "1 min" : `${durationSeconds}s`}
+                    {aspectRatio} • {durationSeconds === 60 ? "1 min" : `${durationSeconds}s`}
                   </span>
                 </div>
               </div>

@@ -112,6 +112,42 @@
       "created_at": "2026-11-06T02:37:34.377Z",
       "sender": "ios",
       "is_cancelled": false
+    },
+    {
+      "id": "e67bd3d3-7f68-4b82-afe1-2d28d21adafb",
+      "role": "user",
+      "content": "pudimos lograr un cambio muy bueno, ahora ya se tenemos los videos, se descargan y todo.\npero hay algo que todavía falla, queda 100% como html, que quiero decir? cuando miro el video que se renderizar solo pasan los segundos, es una foto estática. es decir, el video html generalmente se abre en una pestaña y vos tocas play y todo, lo que yo busco es tener el video listo para publicar.\nen el video que se renderizo es una imagen estática de la página html del video,me explico? pasan los segundos pero no se mueve nada y al lado de aparece el panel para reproducir, pero como es un video no se puede interactuar, me explico?\nvideo\tpanel\n\t\nahora solo necesito que me digas si me entendiste y ahí pasamos a una solución.\nes decir, es como una captura de pantalla de la previsualización del render del estudio. me explico?",
+      "status": "pending",
+      "model": "gemini-3.8-flash-high",
+      "client_type": "gemini-bridge",
+      "parent_message_id": null,
+      "created_at": "2026-11-06T15:05:41.774Z",
+      "sender": "ios",
+      "is_cancelled": false
+    },
+    {
+      "id": "fbafba97-5bfb-4ed6-932a-37c01c3ee8f4",
+      "role": "agent",
+      "content": "**Sí, te entendí al 100% y con total claridad.**\n\nLo que te está pasando es exactamente esto:\n\n1. **Captura de la interfaz en lugar del video puro**: En vez de exportar únicamente el contenido publicitario a pantalla completa (vertical 9:16 limpio, listo para TikTok/Reels), el archivo MP4 parece una **captura de pantalla de la página de previsualización del estudio**, donde se ve el recuadro del video y al lado el panel de controles (`video | panel`).\n2. **Video estático congelado**: Cuando abres el MP4, la línea de tiempo del reproductor avanza en segundos, pero la imagen interna está fija como una foto. Muestra los controles/botones de reproducir como si fuera una página web esperando a que alguien le dé \"Play\", pero al ser un archivo de video final es imposible interactuar con ellos.\n3. **El objetivo real**: Lo que necesitas es un archivo MP4 final donde:\n   - Solo se vea el video (sin paneles, sin controles, sin bordes ni interfaz del estudio).\n   - Las animaciones corran de verdad fotograma a fotograma de forma fluida.\n   - Quede 100% listo para descargar y publicar directo en redes sociales.\n\n---\n\nDecime si querés que pasemos ya mismo a aplicar la solución técnica para corregir la captura y que el render grabe únicamente el lienzo animado en movimiento.",
+      "status": "completed",
+      "model": "gemini-3.8-flash-high",
+      "client_type": "gemini-bridge",
+      "parent_message_id": "e67bd3d3-7f68-4b82-afe1-2d28d21adafb",
+      "created_at": "2026-11-06T15:07:53.972Z",
+      "sender": "macOS",
+      "is_cancelled": false
+    },
+    {
+      "id": "534d7be3-a313-4cd8-8419-97e5c243b51f",
+      "role": "user",
+      "content": "si, pasemos, ala solución técnica",
+      "status": "pending",
+      "model": "gemini-3.8-flash-high",
+      "client_type": "gemini-bridge",
+      "parent_message_id": null,
+      "created_at": "2026-11-06T15:10:41.867Z",
+      "sender": "ios",
+      "is_cancelled": false
     }
   ]
 }

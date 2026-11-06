@@ -7,12 +7,13 @@ export interface BrowserRenderOptions {
   durationSeconds: number;
   width?: number;
   height?: number;
+  cleanVideo?: boolean;
   onProgress?: (percent: number, statusText: string) => void;
 }
 
 /**
  * Pintor de respaldo directo sobre Canvas 2D leyendo el layout real (getBoundingClientRect + getComputedStyle)
- * del iframe en caso de que el HTML contenga recursos externos que impidan usar SVG foreignObject.
+ * del iframe con soporte para video, canvas y filtrado de paneles de control.
  */
 function paintDomToCanvas2D(
   doc: Document,
@@ -37,6 +38,17 @@ function paintDomToCanvas2D(
   const elements = Array.from(doc.body.querySelectorAll("*"));
   for (const el of elements) {
     if (!(el instanceof HTMLElement)) continue;
+
+    // Ocultar paneles y barras de herramientas de control
+    if (
+      el.matches &&
+      el.matches(
+        '.panel, #panel, .controls, #controls, .toolbar, #toolbar, .sidebar, #sidebar, .play-btn, .btn-play, [aria-label*="play" i], [aria-label*="reproducir" i]'
+      )
+    ) {
+      continue;
+    }
+
     const style = win.getComputedStyle(el);
     if (style.display === "none" || style.visibility === "hidden" || Number(style.opacity) === 0) {
       continue;
@@ -47,6 +59,23 @@ function paintDomToCanvas2D(
 
     ctx.save();
     ctx.globalAlpha = Math.max(0, Math.min(1, Number(style.opacity) || 1));
+
+    // Si es una etiqueta <video> o <canvas>, dibujarla directamente
+    if (el instanceof HTMLVideoElement) {
+      try {
+        ctx.drawImage(el, rect.left, rect.top, rect.width, rect.height);
+        ctx.restore();
+        continue;
+      } catch {}
+    }
+
+    if (el instanceof HTMLCanvasElement) {
+      try {
+        ctx.drawImage(el, rect.left, rect.top, rect.width, rect.height);
+        ctx.restore();
+        continue;
+      } catch {}
+    }
 
     const bgColor = style.backgroundColor;
     const bgImage = style.backgroundImage;
@@ -153,6 +182,40 @@ async function renderFrameToCanvas(
   layoutHeight: number,
   currentTimeMs: number
 ): Promise<void> {
+  // Sincronizar cualquier etiqueta <video> en el documento al tiempo exacto
+  const videos = Array.from(doc.querySelectorAll("video"));
+  for (const v of videos) {
+    try {
+      v.muted = true;
+      v.pause();
+      const targetSec = currentTimeMs / 1000;
+      if (v.duration && !isNaN(v.duration) && v.duration > 0) {
+        v.currentTime = targetSec % v.duration;
+      } else {
+        v.currentTime = targetSec;
+      }
+    } catch {}
+  }
+
+  // Si hay un <video> o <canvas> principal que abarca el contenido, dibujarlo directamente
+  const mainVideo = doc.querySelector("video");
+  if (mainVideo && mainVideo.readyState >= 2) {
+    try {
+      ctx.clearRect(0, 0, outWidth, outHeight);
+      ctx.drawImage(mainVideo, 0, 0, outWidth, outHeight);
+      return;
+    } catch {}
+  }
+
+  const mainCanvas = doc.querySelector("canvas");
+  if (mainCanvas) {
+    try {
+      ctx.clearRect(0, 0, outWidth, outHeight);
+      ctx.drawImage(mainCanvas, 0, 0, outWidth, outHeight);
+      return;
+    } catch {}
+  }
+
   try {
     // 1. Avanzar todas las animaciones CSS / Web Animations API del documento al tiempo exacto
     if (doc.documentElement && typeof doc.documentElement.getAnimations === "function") {
@@ -259,6 +322,7 @@ export async function renderHtmlToMp4InBrowser({
   durationSeconds = 15,
   width = 1080,
   height = 1920,
+  cleanVideo = true,
   onProgress,
 }: BrowserRenderOptions): Promise<Blob> {
   const safeDuration = Math.min(Math.max(Number(durationSeconds) || 15, 1), 120);
@@ -288,9 +352,59 @@ export async function renderHtmlToMp4InBrowser({
       throw new Error("No se pudo inicializar el contenedor de renderizado.");
     }
 
+    const cleanStyle =
+      cleanVideo !== false
+        ? `<style id="__zyrvae_clean_video">
+            .panel, #panel, .controls, #controls, .toolbar, #toolbar, .sidebar, #sidebar,
+            .player-controls, .video-controls, .control-bar, .playback-bar,
+            .vjs-control-bar, .plyr__controls, .jw-controls,
+            button[class*="play"], button[id*="play"], [aria-label*="play" i], [aria-label*="reproducir" i],
+            .play-btn, .play-button, .btn-play, #play-button, #playBtn, .btn-reproducir,
+            .timeline, #timeline {
+              display: none !important;
+              opacity: 0 !important;
+              visibility: hidden !important;
+              pointer-events: none !important;
+            }
+            video, canvas, .video, #video, .video-container, .player, #player, .composition, .canvas, #canvas, .main-stage {
+              max-width: 100% !important;
+              max-height: 100% !important;
+              width: 100% !important;
+              height: 100% !important;
+              object-fit: contain !important;
+              margin: 0 auto !important;
+            }
+          </style>`
+        : "";
+
+    const finalHtml = html.includes("<head>")
+      ? html.replace("<head>", `<head>${cleanStyle}`)
+      : `${cleanStyle}${html}`;
+
     doc.open();
-    doc.write(html);
+    doc.write(finalHtml);
     doc.close();
+
+    // Disparar reproducción automática
+    try {
+      const vids = doc.querySelectorAll("video, audio");
+      vids.forEach((m) => {
+        if (m instanceof HTMLMediaElement) {
+          m.muted = true;
+          m.play().catch(() => {});
+        }
+      });
+      const btns = doc.querySelectorAll(
+        'button, [role="button"], .play, #play, .play-btn, .btn-play, [aria-label*="play" i], [aria-label*="reproducir" i]'
+      );
+      btns.forEach((b) => {
+        if (b instanceof HTMLElement) {
+          try {
+            b.click();
+          } catch {}
+        }
+      });
+    } catch {}
 
     // Esperar a que carguen estilos y fuentes (máximo 800ms)
     await Promise.race([

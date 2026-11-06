@@ -70,6 +70,7 @@ app.post("/render", async (req, res) => {
       width = 1080,
       height = 1920,
       download = true,
+      cleanVideo = true,
       mode,
       props,
       accentColor,
@@ -128,6 +129,7 @@ app.post("/render", async (req, res) => {
         fps: safeFps,
         width: safeWidth,
         height: safeHeight,
+        cleanVideo: cleanVideo !== false,
         outputPath: tempFilePath,
         onProgress: (p) => {
           console.log(

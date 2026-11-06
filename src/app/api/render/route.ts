@@ -73,6 +73,9 @@ export async function POST(request: Request) {
       remotionProps,
       duration,
       accentColor,
+      width,
+      height,
+      cleanVideo,
     } = body || {};
 
     const videoTitle =
@@ -92,8 +95,9 @@ export async function POST(request: Request) {
         title: videoTitle,
         duration: safeNumDuration,
         fps: 24,
-        width: 1080,
-        height: 1920,
+        width: Number(width) || 1080,
+        height: Number(height) || 1920,
+        cleanVideo: cleanVideo !== false,
         accentColor: selectedColor,
         props: {
           title: videoTitle,
