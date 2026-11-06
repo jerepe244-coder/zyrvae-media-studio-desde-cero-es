@@ -2,29 +2,24 @@
 
 import * as React from "react";
 import Link from "next/link";
-import dynamic from "next/dynamic";
 import {
   Sparkles,
   Play,
   RotateCcw,
-  ExternalLink,
   CheckCircle2,
   AlertCircle,
   Clapperboard,
   ArrowLeft,
   Loader2,
   Download,
-  HardDrive,
   Smartphone,
-  Palette,
-  Type,
-  TrendingUp,
   FileCode2,
   Copy,
   Trash2,
   Check,
   Clock,
   Code2,
+  Zap,
 } from "lucide-react";
 
 import { Button } from "@/components/ui/button";
@@ -39,24 +34,13 @@ import {
   DialogHeader,
   DialogTitle,
 } from "@/components/ui/dialog";
-import { CommercialProps, defaultCommercialProps } from "@/remotion/types";
+import { renderHtmlToMp4InBrowser } from "@/lib/browser-mp4-converter";
 
-// Importación dinámica lazy del reproductor Remotion (solo se descarga si se activa el modo Remotion)
-const RemotionPreviewPlayer = dynamic(
-  () => import("@/components/studio/RemotionPreviewPlayer"),
-  {
-    ssr: false,
-    loading: () => (
-      <div className="w-full h-full flex flex-col items-center justify-center p-6 text-center space-y-3 bg-zinc-950">
-        <Loader2 className="h-8 w-8 animate-spin text-indigo-400" />
-        <p className="text-xs text-zinc-400">Cargando motor Remotion...</p>
-      </div>
-    ),
-  }
-);
+const DEFAULT_RENDERER_URL =
+  process.env.NEXT_PUBLIC_RENDERER_URL || "https://zyrvae-video-renderer.onrender.com";
 
-// Plantilla HTML de demostración publicitaria vertical 9:16 (sincronizada con duración)
-const createSampleAdHtml = (seconds: number = 30) => `<!DOCTYPE html>
+// Plantilla 1: Comercial Principal ZYRVAE (9:16 Vertical 1080x1920)
+const createSampleAdHtml = (seconds: number = 15) => `<!DOCTYPE html>
 <html lang="es">
 <head>
   <meta charset="UTF-8">
@@ -75,7 +59,7 @@ const createSampleAdHtml = (seconds: number = 30) => `<!DOCTYPE html>
     .orb {
       position: absolute; width: 700px; height: 700px; border-radius: 50%;
       background: radial-gradient(circle, #6366f1 0%, transparent 70%);
-      opacity: 0.35; filter: blur(90px); animation: float 6s ease-in-out infinite alternate;
+      opacity: 0.35; filter: blur(80px); animation: float 6s ease-in-out infinite alternate;
     }
     @keyframes float {
       0% { transform: translate(50px, 120px) scale(0.9); }
@@ -84,33 +68,33 @@ const createSampleAdHtml = (seconds: number = 30) => `<!DOCTYPE html>
     .badge {
       display: inline-flex; align-items: center; gap: 16px;
       padding: 16px 32px; border-radius: 9999px;
-      background: rgba(24, 24, 27, 0.75); border: 1px solid rgba(255, 255, 255, 0.15);
-      backdrop-filter: blur(20px); width: fit-content; z-index: 10;
+      background: rgba(24, 24, 27, 0.8); border: 1px solid rgba(255, 255, 255, 0.15);
+      width: fit-content; z-index: 10;
       animation: fadeInDown 0.8s cubic-bezier(0.16, 1, 0.3, 1) forwards;
     }
     .badge-dot { width: 16px; height: 16px; border-radius: 50%; background: #10b981; box-shadow: 0 0 20px #10b981; }
     .badge-text { font-size: 24px; font-weight: 700; letter-spacing: 0.15em; text-transform: uppercase; color: #f4f4f5; }
     .hero { position: relative; z-index: 10; display: flex; flex-direction: column; gap: 36px; margin: auto 0; }
     .tag { font-size: 32px; font-weight: 800; color: #818cf8; text-transform: uppercase; letter-spacing: 0.2em; }
-    .title { font-size: 88px; font-weight: 900; line-height: 1.05; letter-spacing: -0.04em; }
-    .title span { background: linear-gradient(135deg, #818cf8 0%, #c084fc 50%, #f43f5e 100%); -webkit-background-clip: text; -webkit-text-fill-color: transparent; }
+    .title { font-size: 88px; font-weight: 900; line-height: 1.05; letter-spacing: -0.04em; color: #ffffff; }
+    .title span { color: #a855f7; }
     .desc { font-size: 36px; line-height: 1.45; color: #a1a1aa; max-width: 920px; }
     .card-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 24px; margin-top: 10px; }
     .stat-card {
-      background: rgba(24, 24, 27, 0.65); border: 1px solid rgba(255, 255, 255, 0.12);
-      padding: 32px; border-radius: 28px; backdrop-filter: blur(16px);
+      background: rgba(24, 24, 27, 0.75); border: 1px solid rgba(255, 255, 255, 0.12);
+      padding: 32px; border-radius: 28px;
     }
     .stat-val { font-size: 54px; font-weight: 900; color: #ffffff; }
-    .stat-lbl { font-size: 22px; color: #71717a; text-transform: uppercase; letter-spacing: 0.08em; margin-top: 6px; }
+    .stat-lbl { font-size: 22px; color: #a1a1aa; text-transform: uppercase; letter-spacing: 0.08em; margin-top: 6px; }
     .footer { position: relative; z-index: 10; display: flex; flex-direction: column; gap: 24px; }
-    .progress-track { width: 100%; height: 8px; background: rgba(255, 255, 255, 0.1); border-radius: 4px; overflow: hidden; }
-    .progress-fill { height: 100%; width: 0%; background: linear-gradient(90deg, #6366f1, #ec4899); box-shadow: 0 0 20px #6366f1; animation: fillProgress ${seconds}s linear infinite; }
+    .progress-track { width: 100%; height: 10px; background: rgba(255, 255, 255, 0.12); border-radius: 6px; overflow: hidden; }
+    .progress-fill { height: 100%; width: 0%; background: linear-gradient(90deg, #6366f1, #ec4899); animation: fillProgress ${seconds}s linear forwards; }
     @keyframes fillProgress { 0% { width: 0%; } 100% { width: 100%; } }
     .foot-labels { display: flex; justify-content: space-between; font-size: 24px; color: #71717a; font-weight: 600; text-transform: uppercase; letter-spacing: 0.08em; }
     @keyframes fadeInDown { from { opacity: 0; transform: translateY(-30px); } to { opacity: 1; transform: translateY(0); } }
   </style>
 </head>
-<body data-composition-id="main" data-duration="${seconds}" data-width="1080" data-height="1920" data-fps="30" data-no-timeline>
+<body data-duration="${seconds}" data-width="1080" data-height="1920">
   <div class="canvas">
     <div class="orb"></div>
     <div class="badge">
@@ -120,14 +104,14 @@ const createSampleAdHtml = (seconds: number = 30) => `<!DOCTYPE html>
     <div class="hero">
       <span class="tag">Convertidor HTML a Video</span>
       <h1 class="title">Tu publicidad en código, <span>convertida a MP4</span> al instante.</h1>
-      <p class="desc">Imprenta automatizada en resolución Ultra HD 9:16 vertical para reels y TikTok.</p>
+      <p class="desc">Imprenta automatizada en resolución vertical 9:16 lista para Reels, TikTok y Shorts.</p>
       <div class="card-grid">
         <div class="stat-card">
           <div class="stat-val">+300%</div>
           <div class="stat-lbl">Retención Visual</div>
         </div>
         <div class="stat-card">
-          <div class="stat-val">1080 × 1920</div>
+          <div class="stat-val">9:16 HD</div>
           <div class="stat-lbl">Vertical Nativo</div>
         </div>
       </div>
@@ -135,59 +119,97 @@ const createSampleAdHtml = (seconds: number = 30) => `<!DOCTYPE html>
     <div class="footer">
       <div class="progress-track"><div class="progress-fill"></div></div>
       <div class="foot-labels">
-        <span>Renderizado a Video</span>
-        <span>Ultra HD 9:16</span>
+        <span>Renderizado a Video MP4</span>
+        <span>9:16 Vertical</span>
       </div>
     </div>
   </div>
 </body>
 </html>`;
 
-const COLOR_PRESETS = [
-  { name: "Índigo ZYRVAE", hex: "#6366f1" },
-  { name: "Esmeralda", hex: "#10b981" },
-  { name: "Rosa Neón", hex: "#f43f5e" },
-  { name: "Violeta Profundo", hex: "#8b5cf6" },
-  { name: "Ámbar Dorado", hex: "#f59e0b" },
-  { name: "Cian Eléctrico", hex: "#06b6d4" },
-];
+// Plantilla 2: Oferta Flash
+const createFlashSaleHtml = (seconds: number = 15) => `<!DOCTYPE html>
+<html lang="es">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=1080, height=1920">
+  <title>Oferta Flash - ZYRVAE</title>
+  <style>
+    * { margin: 0; padding: 0; box-sizing: border-box; font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif; }
+    html, body { width: 1080px; height: 1920px; overflow: hidden; background: #09090b; color: #ffffff; }
+    .canvas {
+      position: relative; width: 1080px; height: 1920px;
+      display: flex; flex-direction: column; justify-content: space-between;
+      padding: 120px 80px;
+      background: radial-gradient(circle at 50% 20%, #4c0519 0%, #09090b 70%);
+      overflow: hidden;
+    }
+    .badge {
+      display: inline-flex; align-items: center; gap: 16px;
+      padding: 18px 36px; border-radius: 9999px;
+      background: #f43f5e; color: #ffffff; font-size: 26px; font-weight: 800;
+      letter-spacing: 0.12em; text-transform: uppercase; width: fit-content;
+    }
+    .hero { display: flex; flex-direction: column; gap: 36px; margin: auto 0; }
+    .discount { font-size: 150px; font-weight: 900; color: #fb7185; line-height: 1; letter-spacing: -0.04em; }
+    .title { font-size: 82px; font-weight: 900; line-height: 1.08; color: #ffffff; }
+    .desc { font-size: 36px; line-height: 1.45; color: #fda4af; }
+    .cta {
+      background: #f43f5e; color: #ffffff; font-size: 38px; font-weight: 800;
+      text-align: center; padding: 38px; border-radius: 28px; margin-top: 20px;
+    }
+    .progress-track { width: 100%; height: 10px; background: rgba(255,255,255,0.12); border-radius: 6px; overflow: hidden; }
+    .progress-fill { height: 100%; width: 0%; background: #f43f5e; animation: fillProgress ${seconds}s linear forwards; }
+    @keyframes fillProgress { 0% { width: 0%; } 100% { width: 100%; } }
+  </style>
+</head>
+<body data-duration="${seconds}">
+  <div class="canvas">
+    <div class="badge">🔥 OFERTA POR TIEMPO LIMITADO</div>
+    <div class="hero">
+      <div class="discount">50% OFF</div>
+      <h1 class="title">Gran Venta Exclusiva de Temporada</h1>
+      <p class="desc">Aprovecha descuentos directos en toda nuestra línea premium antes de que termine hoy.</p>
+      <div class="cta">Comprar con Descuento Ahora →</div>
+    </div>
+    <div class="progress-track"><div class="progress-fill"></div></div>
+  </div>
+</body>
+</html>`;
 
 const DURATION_PRESETS = [
-  { seconds: 15, label: "15s", title: "15 segundos", desc: "Reel / Story" },
-  { seconds: 30, label: "30s", title: "30 segundos", desc: "Comercial Estándar", badge: "Recomendado" },
-  { seconds: 60, label: "1 min", title: "60 segundos (1 min)", desc: "Anuncio Completo" },
+  { seconds: 15, label: "15s", desc: "Reel / Story Rápido", badge: "Más Rápido" },
+  { seconds: 30, label: "30s", desc: "Comercial Estándar" },
+  { seconds: 60, label: "1 min", desc: "Anuncio Completo" },
 ];
 
 export default function StudioPage() {
-  // Modo de edición: "html" (pegar HTML) o "remotion" (formulario visual)
-  const [mode, setMode] = React.useState<"html" | "remotion">("html");
-
   // Pestaña en vista móvil: "editor" o "preview"
   const [mobileTab, setMobileTab] = React.useState<"editor" | "preview">("editor");
 
-  // Configuración general compartida: defecto en 30 segundos
-  const [durationSeconds, setDurationSeconds] = React.useState<number>(30);
-  const [saveDestination, setSaveDestination] = React.useState<"device" | "drive">("device");
+  // Duración por defecto en 15s para conversión ultrarrápida (configurable a 30s, 60s o custom)
+  const [durationSeconds, setDurationSeconds] = React.useState<number>(15);
 
-  // Estado del código HTML
-  const [htmlCode, setHtmlCode] = React.useState<string>(createSampleAdHtml(30));
-  const [htmlTitle, setHtmlTitle] = React.useState<string>("Comercial HTML ZYRVAE");
+  // Estado del código HTML y versión debounced para que la página nunca se trabe al escribir o pegar
+  const [htmlCode, setHtmlCode] = React.useState<string>(() => createSampleAdHtml(15));
+  const [debouncedHtml, setDebouncedHtml] = React.useState<string>(() => createSampleAdHtml(15));
+  const [htmlTitle, setHtmlTitle] = React.useState<string>("Comercial_ZYRVAE");
   const [copied, setCopied] = React.useState(false);
   const [iframeKey, setIframeKey] = React.useState(0);
 
-  // Estado de las propiedades del video Remotion
-  const [videoProps, setVideoProps] = React.useState<CommercialProps>({
-    ...defaultCommercialProps,
-  });
+  // URL del microservicio de renderizado (detectada automáticamente)
+  const [rendererUrl, setRendererUrl] = React.useState<string>(DEFAULT_RENDERER_URL);
 
-  // Estado de carga y modal de resultados
+  // Estado de conversión y progreso en vivo
   const [isLoading, setIsLoading] = React.useState(false);
+  const [progressPercent, setProgressPercent] = React.useState<number>(0);
+  const [progressStatus, setProgressStatus] = React.useState<string>("");
+
   const [feedback, setFeedback] = React.useState<{
     type: "success" | "error";
     message: string;
     details?: string;
     engine?: string;
-    isDirectDownload?: boolean;
     downloadUrl?: string;
     filename?: string;
   } | null>(null);
@@ -197,31 +219,65 @@ export default function StudioPage() {
   const phoneContainerRef = React.useRef<HTMLDivElement>(null);
   const [previewScale, setPreviewScale] = React.useState<number>(0.26);
 
-  // Calcular escala para el iframe (1080x1920) según el ancho real de la pantalla simulada
+  // Debounce del HTML para la vista previa: evita recrear el iframe en cada tecla o pegado grande
+  React.useEffect(() => {
+    const timer = setTimeout(() => {
+      setDebouncedHtml(htmlCode);
+    }, 350);
+    return () => clearTimeout(timer);
+  }, [htmlCode]);
+
+  // Precalentar (wake up) el servidor de Render automáticamente al abrir la página
+  React.useEffect(() => {
+    let active = true;
+    const warmUpEngines = async () => {
+      try {
+        // 1. Consultar API interna para obtener URL configurada y despertar servidor
+        const res = await fetch("/api/render", { cache: "no-store" });
+        const data = await res.json().catch(() => null);
+        if (active && data?.rendererUrl) {
+          setRendererUrl(String(data.rendererUrl).replace(/\/$/, ""));
+        }
+      } catch {}
+
+      try {
+        // 2. Ping directo no bloqueante al microservicio en la nube
+        await fetch(`${DEFAULT_RENDERER_URL.replace(/\/$/, "")}/health`, {
+          mode: "cors",
+          cache: "no-store",
+        });
+      } catch {}
+    };
+    warmUpEngines();
+    return () => {
+      active = false;
+    };
+  }, []);
+
+  // Calcular escala para el visor 9:16 (1080x1920)
   React.useEffect(() => {
     const updateScale = () => {
       if (phoneContainerRef.current) {
         const width = phoneContainerRef.current.clientWidth;
         if (width > 0) {
-          setPreviewScale(width / 1080);
+          setPreviewScale((width - 24) / 1080);
         }
       }
     };
     updateScale();
     window.addEventListener("resize", updateScale);
     return () => window.removeEventListener("resize", updateScale);
-  }, []);
+  }, [mobileTab]);
 
   // Cambiar duración y sincronizar con el código HTML si aplica
   const handleChangeDuration = (sec: number) => {
     setDurationSeconds(sec);
     if (htmlCode.includes("fillProgress")) {
-      setHtmlCode((prev) =>
-        prev
-          .replace(/fillProgress\s+\d+s/gi, `fillProgress ${sec}s`)
-          .replace(/data-duration=["']\d+["']/gi, `data-duration="${sec}"`)
-      );
-      setIframeKey((k) => k + 1);
+      const updated = htmlCode
+        .replace(/fillProgress\s+\d+s/gi, `fillProgress ${sec}s`)
+        .replace(/data-duration=["']\d+["']/gi, `data-duration="${sec}"`);
+      setHtmlCode(updated);
+      setDebouncedHtml(updated);
     }
   };
 
@@ -236,177 +292,169 @@ export default function StudioPage() {
     }
   };
 
-  // Cargar ejemplo en modo HTML
-  const handleLoadSampleHtml = () => {
-    setHtmlCode(createSampleAdHtml(durationSeconds));
-    setIframeKey((prev) => prev + 1);
+  // Descargar automáticamente un Blob MP4 en el dispositivo del usuario
+  const triggerMp4Download = (blob: Blob, rawTitle: string): { url: string; filename: string } => {
+    const cleanName =
+      (rawTitle || "Comercial_ZYRVAE")
+        .replace(/\.mp4$/i, "")
+        .replace(/[^a-zA-Z0-9_\-\s]/g, "")
+        .trim()
+        .replace(/\s+/g, "_") || "Comercial_ZYRVAE";
+    const filename = `${cleanName}.mp4`;
+    const url = window.URL.createObjectURL(blob);
+
+    const a = document.createElement("a");
+    a.style.display = "none";
+    a.href = url;
+    a.download = filename;
+    document.body.appendChild(a);
+    a.click();
+    setTimeout(() => {
+      if (a.parentNode) a.parentNode.removeChild(a);
+    }, 2000);
+
+    return { url, filename };
   };
 
-  // Cargar plantillas Remotion con duraciones adecuadas
-  const handleLoadTemplateZyrvae = () => {
-    setVideoProps({
-      title: "Tu publicidad en video, al instante.",
-      subtitle: "Imprenta de Video Automatizada",
-      description:
-        "Diseño premium de alta conversión con tecnología Remotion para anuncios 9:16 Ultra HD.",
-      brandName: "ZYRVAE MEDIA STUDIO",
-      accentColor: "#6366f1",
-      badgeText: "Comercial ZYRVAE",
-      statsValue: "+300%",
-      statsLabel: "Conversión de Marca",
-      callToAction: "Potencia tu Negocio Hoy",
-      template: "commercial",
-    });
-    handleChangeDuration(30);
-  };
-
-  const handleLoadTemplateSale = () => {
-    setVideoProps({
-      title: "Gran Venta Exclusiva de Temporada",
-      subtitle: "Oferta por Tiempo Limitado",
-      description:
-        "Aprovecha hasta un 50% de descuento en todos nuestros servicios antes de que termine el mes.",
-      brandName: "ZYRVAE DEALS",
-      accentColor: "#f43f5e",
-      badgeText: "50% OFF HOY",
-      statsValue: "50% OFF",
-      statsLabel: "Descuento Directo",
-      callToAction: "Comprar con Descuento",
-      template: "reel",
-    });
-    handleChangeDuration(15);
-  };
-
-  const handleLoadTemplateSuccess = () => {
-    setVideoProps({
-      title: "Cómo escalamos las ventas en 30 días",
-      subtitle: "Caso de Éxito Comprobado",
-      description:
-        "Historias reales de negocios que transformaron su presencia digital con comerciales de alto impacto.",
-      brandName: "ZYRVAE GROWTH",
-      accentColor: "#10b981",
-      badgeText: "Caso de Estudio",
-      statsValue: "10k+",
-      statsLabel: "Nuevos Clientes",
-      callToAction: "Conocer el Caso Completo",
-      template: "success-case",
-    });
-    handleChangeDuration(60);
-  };
-
-  // Enviar orden de renderizado al motor dedicado (Render/Railway) o fallback
+  // Conversión infalible de HTML a MP4 (Nube Directa -> API Proxy -> Motor Integrado en Navegador)
   const handleRenderVideo = async () => {
-    if (isLoading) return;
+    if (isLoading || !htmlCode.trim()) return;
 
     setIsLoading(true);
     setFeedback(null);
+    setProgressPercent(8);
+    setProgressStatus("Conectando con el motor de conversión MP4...");
+
+    const safeTitle = htmlTitle.trim() || "Comercial_ZYRVAE";
+    const requestPayload = {
+      mode: "html",
+      html: htmlCode,
+      title: safeTitle,
+      duration: durationSeconds,
+      fps: 24,
+      width: 1080,
+      height: 1920,
+      download: true,
+    };
+
+    // Simulador de progreso suave mientras el servidor en la nube procesa el video
+    let progressInterval: ReturnType<typeof setInterval> | null = setInterval(() => {
+      setProgressPercent((prev) => {
+        if (prev >= 85) return prev;
+        return prev + 4;
+      });
+    }, 700);
+
+    const clearProgressTimer = () => {
+      if (progressInterval) {
+        clearInterval(progressInterval);
+        progressInterval = null;
+      }
+    };
 
     try {
-      const payload =
-        mode === "html"
-          ? {
-              mode: "html",
-              html: htmlCode,
-              title: htmlTitle.trim() || "Comercial HTML ZYRVAE",
-              duration: `${durationSeconds}`,
-              destination: saveDestination,
-            }
-          : {
-              mode: "remotion",
-              title: videoProps.title.trim() || "Comercial ZYRVAE",
-              duration: `${durationSeconds}`,
-              accentColor: videoProps.accentColor,
-              props: videoProps,
-              destination: saveDestination,
-            };
+      let mp4Blob: Blob | null = null;
+      let usedEngine = "Motor Cloud Dedicado (Puppeteer + FFmpeg)";
 
-      const response = await fetch("/api/render", {
-        method: "POST",
-        headers: {
-          "Content-Type": "application/json",
-        },
-        body: JSON.stringify(payload),
-      });
-
-      const contentType = response.headers.get("content-type") || "";
-
-      // Caso A: El servidor devuelve directamente el video binario MP4 (Render.com / Railway)
-      if (contentType.includes("video/mp4") || contentType.includes("octet-stream")) {
-        const blob = await response.blob();
-        const url = window.URL.createObjectURL(blob);
-        
-        let filename = `${(mode === "html" ? htmlTitle : videoProps.title) || "Comercial_ZYRVAE"}.mp4`;
-        const disposition = response.headers.get("content-disposition");
-        if (disposition && disposition.includes("filename=")) {
-          const match = disposition.match(/filename="?([^"]+)"?/);
-          if (match && match[1]) filename = match[1];
-        }
-        filename = filename.replace(/[^a-zA-Z0-9_\-\.]/g, "_");
-
-        const a = document.createElement("a");
-        a.style.display = "none";
-        a.href = url;
-        a.download = filename;
-        document.body.appendChild(a);
-        a.click();
-        setTimeout(() => {
-          document.body.removeChild(a);
-        }, 1500);
-
-        const durText = durationSeconds === 60 ? "1 minuto (60s)" : `${durationSeconds} segundos`;
-        setFeedback({
-          type: "success",
-          message: `¡Video MP4 (${durText}) generado con éxito! La descarga directa ha comenzado automáticamente en tu dispositivo.`,
-          isDirectDownload: true,
-          downloadUrl: url,
-          filename: filename,
-          engine: "Render.com / Railway (Microservicio Cloud)",
+      // ETAPA 1: Intentar llamada directa por CORS al microservicio (evita límites de timeout de Vercel)
+      const targetCloudUrl = (rendererUrl || DEFAULT_RENDERER_URL).replace(/\/$/, "");
+      try {
+        setProgressStatus("Renderizando fotogramas HTML en servidor Cloud...");
+        const directRes = await fetch(`${targetCloudUrl}/render`, {
+          method: "POST",
+          mode: "cors",
+          headers: {
+            "Content-Type": "application/json",
+            Accept: "video/mp4, application/json",
+          },
+          body: JSON.stringify(requestPayload),
+          signal: AbortSignal.timeout(40000),
         });
-        setShowResultModal(true);
-        return;
+
+        const directType = directRes.headers.get("content-type") || "";
+        if (directRes.ok && (directType.includes("video/mp4") || directType.includes("octet-stream"))) {
+          mp4Blob = await directRes.blob();
+          usedEngine = "Motor Cloud Dedicado (HTML → MP4 Directo)";
+        }
+      } catch (directErr) {
+        console.warn("[Conversor MP4] Aviso en conexión directa cloud, probando ruta API:", directErr);
       }
 
-      // Caso B: El servidor devuelve JSON (GitHub Actions o respuesta de estado)
-      const data = await response.json();
+      // ETAPA 2: Si la llamada directa no devolvió el MP4, intentar vía /api/render
+      if (!mp4Blob) {
+        try {
+          setProgressStatus("Procesando video a través de la API...");
+          const apiRes = await fetch("/api/render", {
+            method: "POST",
+            headers: {
+              "Content-Type": "application/json",
+            },
+            body: JSON.stringify(requestPayload),
+            signal: AbortSignal.timeout(42000),
+          });
 
-      if (!response.ok) {
-        throw new Error(data.details || data.error || "Error al solicitar la conversión a MP4.");
+          const apiType = apiRes.headers.get("content-type") || "";
+          if (apiRes.ok && (apiType.includes("video/mp4") || apiType.includes("octet-stream"))) {
+            mp4Blob = await apiRes.blob();
+            usedEngine = "Servidor Cloud de Video MP4";
+          }
+        } catch (apiErr) {
+          console.warn("[Conversor MP4] Aviso en API /api/render, activando motor local:", apiErr);
+        }
       }
 
+      // ETAPA 3: Si el servidor en la nube está reiniciando o en mantenimiento, convertir en el navegador
+      if (!mp4Blob || mp4Blob.size < 500) {
+        clearProgressTimer();
+        usedEngine = "Motor MP4 Integrado en Navegador (Instantáneo)";
+        mp4Blob = await renderHtmlToMp4InBrowser({
+          html: htmlCode,
+          durationSeconds,
+          width: 1080,
+          height: 1920,
+          onProgress: (pct, statusText) => {
+            setProgressPercent(pct);
+            setProgressStatus(statusText);
+          },
+        });
+      }
+
+      clearProgressTimer();
+      setProgressPercent(100);
+      setProgressStatus("¡Descargando archivo MP4!");
+
+      const { url, filename } = triggerMp4Download(mp4Blob, safeTitle);
       const durText = durationSeconds === 60 ? "1 minuto (60s)" : `${durationSeconds} segundos`;
-      const successMsg =
-        saveDestination === "device"
-          ? mode === "html"
-            ? `¡Conversión de HTML a MP4 (${durText}) iniciada! En unos instantes podrás descargar tu archivo de video.`
-            : `¡Renderizado con Remotion (${durText}) iniciado! En breves instantes podrás descargar tu video MP4.`
-          : mode === "html"
-          ? `¡Conversión de HTML a MP4 (${durText}) iniciada! El video se generará y se guardará en tu Google Drive.`
-          : `¡Renderizado con Remotion (${durText}) iniciado! El video se generará y se guardará en tu Google Drive.`;
 
       setFeedback({
         type: "success",
-        message: successMsg,
-        engine: data.engine || (mode === "html" ? "Convertidor HTML a MP4" : "Remotion Ultra HD"),
-        isDirectDownload: false,
+        message: `¡Tu código HTML fue convertido a MP4 (${durText}) con éxito! La descarga de "${filename}" ha comenzado automáticamente.`,
+        engine: usedEngine,
+        downloadUrl: url,
+        filename,
       });
       setShowResultModal(true);
     } catch (err: unknown) {
-      console.error("Error al renderizar:", err);
+      clearProgressTimer();
+      console.error("Error al convertir a MP4:", err);
       const errorMsg = err instanceof Error ? err.message : String(err);
       setFeedback({
         type: "error",
-        message: "No se pudo iniciar el renderizado a MP4.",
+        message: "Ocurrió un inconveniente al generar el archivo MP4.",
         details: errorMsg,
       });
       setShowResultModal(true);
     } finally {
+      clearProgressTimer();
       setIsLoading(false);
+      setProgressPercent(0);
+      setProgressStatus("");
     }
   };
 
   return (
     <div className="px-3 sm:px-6 md:px-10 py-4 sm:py-6 md:py-8 max-w-7xl mx-auto space-y-5 md:space-y-8">
-      {/* Header & Breadcrumbs */}
+      {/* Encabezado limpio y enfocado en Conversión HTML -> MP4 */}
       <div className="flex flex-col gap-4 pb-5 border-b border-zinc-800/80">
         <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-3">
           <div>
@@ -419,50 +467,55 @@ export default function StudioPage() {
                 Biblioteca
               </Link>
               <span>/</span>
-              <span className="text-zinc-200 font-medium">Estudio de Creación</span>
+              <span className="text-zinc-200 font-medium">Convertidor HTML a MP4</span>
             </div>
             <h1 className="text-xl sm:text-2xl md:text-3xl font-bold tracking-tight text-white flex items-center gap-2.5">
               <Clapperboard className="h-6 w-6 sm:h-7 sm:w-7 text-indigo-400" />
-              Estudio de Video Comercial
+              Convertidor de HTML a Video MP4
             </h1>
             <p className="text-xs sm:text-sm text-zinc-400 mt-0.5">
-              Crea comerciales Ultra HD 9:16 en MP4 (15s, 30s o 1 minuto) con código HTML o plantillas Remotion.
+              Pega tu código HTML/CSS y descárgalo directamente como video .MP4 vertical (9:16).
             </p>
           </div>
 
-          {/* Selector de Modo: HTML vs Remotion */}
-          <div className="flex items-center gap-1.5 bg-zinc-900/90 p-1 rounded-xl border border-zinc-800 w-full sm:w-auto self-start sm:self-auto shadow-md">
-            <button
+          {/* Plantillas Rápidas de Código HTML */}
+          <div className="flex items-center gap-1.5 flex-wrap">
+            <Button
               type="button"
+              variant="outline"
+              size="sm"
+              disabled={isLoading}
               onClick={() => {
-                setMode("html");
-                setIframeKey((k) => k + 1);
+                const code = createSampleAdHtml(durationSeconds);
+                setHtmlCode(code);
+                setDebouncedHtml(code);
+                setHtmlTitle("Comercial_ZYRVAE");
               }}
-              className={`flex-1 sm:flex-none px-3.5 py-2 text-xs font-semibold rounded-lg transition-all flex items-center justify-center gap-1.5 ${
-                mode === "html"
-                  ? "bg-indigo-600 text-white shadow-sm ring-1 ring-indigo-400/50"
-                  : "text-zinc-400 hover:text-zinc-200 hover:bg-zinc-800/60"
-              }`}
+              className="h-8 text-xs border-zinc-800 hover:bg-zinc-800 text-zinc-300 gap-1.5"
             >
-              <FileCode2 className="h-3.5 w-3.5" />
-              Pegar HTML a MP4
-            </button>
-            <button
+              <Sparkles className="h-3.5 w-3.5 text-indigo-400" />
+              Plantilla ZYRVAE
+            </Button>
+            <Button
               type="button"
-              onClick={() => setMode("remotion")}
-              className={`flex-1 sm:flex-none px-3.5 py-2 text-xs font-semibold rounded-lg transition-all flex items-center justify-center gap-1.5 ${
-                mode === "remotion"
-                  ? "bg-indigo-600 text-white shadow-sm ring-1 ring-indigo-400/50"
-                  : "text-zinc-400 hover:text-zinc-200 hover:bg-zinc-800/60"
-              }`}
+              variant="outline"
+              size="sm"
+              disabled={isLoading}
+              onClick={() => {
+                const code = createFlashSaleHtml(durationSeconds);
+                setHtmlCode(code);
+                setDebouncedHtml(code);
+                setHtmlTitle("Oferta_Flash_ZYRVAE");
+              }}
+              className="h-8 text-xs border-zinc-800 hover:bg-zinc-800 text-zinc-300 gap-1.5"
             >
-              <Sparkles className="h-3.5 w-3.5" />
-              Editor Visual Remotion
-            </button>
+              <Zap className="h-3.5 w-3.5 text-rose-400" />
+              Plantilla Oferta Flash
+            </Button>
           </div>
         </div>
 
-        {/* Barra móvil para alternar entre "Editor" y "Vista Previa" (Solo en pantallas chicas) */}
+        {/* Barra móvil para alternar entre "Código HTML" y "Vista Previa" */}
         <div className="lg:hidden flex items-center bg-zinc-900/95 p-1 rounded-xl border border-zinc-800 shadow-md sticky top-[calc(3.5rem+env(safe-area-inset-top,0px))] z-30 backdrop-blur-md">
           <button
             type="button"
@@ -474,7 +527,7 @@ export default function StudioPage() {
             }`}
           >
             <Code2 className="h-4 w-4" />
-            Configuración & Código
+            Pegar Código HTML
           </button>
           <button
             type="button"
@@ -486,611 +539,250 @@ export default function StudioPage() {
             }`}
           >
             <Smartphone className="h-4 w-4" />
-            Vista Previa en Vivo
+            Vista Previa 9:16
             <span className="w-2 h-2 rounded-full bg-emerald-400 animate-pulse" />
           </button>
         </div>
       </div>
 
-      {/* Main Two-Column Layout (Responsive) */}
+      {/* Layout Principal de Dos Columnas */}
       <div className="grid grid-cols-1 lg:grid-cols-12 gap-6 lg:gap-8 items-start">
-        {/* Columna Izquierda: Editor (HTML o Remotion) */}
+        {/* Columna Izquierda: Editor de Código HTML y Conversión */}
         <div
-          className={`lg:col-span-7 space-y-6 ${
+          className={`lg:col-span-7 space-y-5 ${
             mobileTab === "editor" ? "block" : "hidden lg:block"
           }`}
         >
-          {mode === "html" ? (
-            /* ==============================================================
-               MODO 1: PEGAR CÓDIGO HTML A MP4
-            ============================================================== */
-            <div className="space-y-5">
-              {/* Card del Editor de Código HTML */}
-              <Card className="border-zinc-800/80 bg-zinc-900/40 backdrop-blur-md shadow-xl">
-                <CardHeader className="pb-3">
-                  <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-2.5">
-                    <div>
-                      <CardTitle className="text-base font-semibold text-white flex items-center gap-2">
-                        <FileCode2 className="h-4 w-4 text-indigo-400" />
-                        Código HTML / CSS del Anuncio
-                      </CardTitle>
-                      <CardDescription className="text-xs text-zinc-400 mt-0.5">
-                        Pega tu código HTML y se compilará fotograma por fotograma en un video .mp4 9:16.
-                      </CardDescription>
-                    </div>
+          {/* Card del Editor de Código HTML */}
+          <Card className="border-zinc-800/80 bg-zinc-900/40 backdrop-blur-md shadow-xl">
+            <CardHeader className="pb-3">
+              <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-2.5">
+                <div>
+                  <CardTitle className="text-base font-semibold text-white flex items-center gap-2">
+                    <FileCode2 className="h-4 w-4 text-indigo-400" />
+                    1. Pega tu Código HTML / CSS
+                  </CardTitle>
+                  <CardDescription className="text-xs text-zinc-400 mt-0.5">
+                    Pega cualquier documento o bloque HTML. Se convertirá directamente en un archivo .mp4.
+                  </CardDescription>
+                </div>
 
-                    {/* Botones de acción rápida en HTML */}
-                    <div className="flex items-center gap-1.5 flex-wrap">
-                      <Button
-                        type="button"
-                        variant="outline"
-                        size="sm"
-                        onClick={handleLoadSampleHtml}
-                        className="h-8 text-[11px] border-zinc-800 hover:bg-zinc-800 text-zinc-300 gap-1.5"
-                      >
-                        <Sparkles className="h-3 w-3 text-indigo-400" />
-                        Cargar Ejemplo
-                      </Button>
-                      <Button
-                        type="button"
-                        variant="outline"
-                        size="sm"
-                        onClick={handleCopyHtml}
-                        className="h-8 text-[11px] border-zinc-800 hover:bg-zinc-800 text-zinc-300 gap-1.5"
-                      >
-                        {copied ? (
-                          <>
-                            <Check className="h-3 w-3 text-emerald-400" />
-                            Copiado
-                          </>
-                        ) : (
-                          <>
-                            <Copy className="h-3 w-3 text-zinc-400" />
-                            Copiar
-                          </>
-                        )}
-                      </Button>
-                      <Button
-                        type="button"
-                        variant="outline"
-                        size="sm"
-                        onClick={() => {
-                          setHtmlCode("");
-                          setIframeKey((k) => k + 1);
-                        }}
-                        className="h-8 text-[11px] border-zinc-800 hover:bg-zinc-800 text-zinc-400 hover:text-red-400 gap-1.5"
-                        title="Limpiar código"
-                      >
-                        <Trash2 className="h-3 w-3" />
-                      </Button>
-                    </div>
-                  </div>
-                </CardHeader>
-                <CardContent className="space-y-4">
-                  {/* Título del Video */}
-                  <div className="space-y-1.5">
-                    <label className="text-xs font-medium text-zinc-300">
-                      Título o Identificador del Video
-                    </label>
-                    <Input
-                      value={htmlTitle}
-                      onChange={(e) => setHtmlTitle(e.target.value)}
-                      placeholder="Ej: Comercial La Fresque 2026"
-                      className="bg-zinc-950/70 border-zinc-800 text-zinc-100 text-sm focus:border-indigo-500"
-                    />
-                  </div>
+                {/* Acciones rápidas del editor */}
+                <div className="flex items-center gap-1.5 flex-wrap">
+                  <Button
+                    type="button"
+                    variant="outline"
+                    size="sm"
+                    disabled={isLoading}
+                    onClick={handleCopyHtml}
+                    className="h-8 text-[11px] border-zinc-800 hover:bg-zinc-800 text-zinc-300 gap-1.5"
+                  >
+                    {copied ? (
+                      <>
+                        <Check className="h-3 w-3 text-emerald-400" />
+                        Copiado
+                      </>
+                    ) : (
+                      <>
+                        <Copy className="h-3 w-3 text-zinc-400" />
+                        Copiar HTML
+                      </>
+                    )}
+                  </Button>
+                  <Button
+                    type="button"
+                    variant="outline"
+                    size="sm"
+                    disabled={isLoading}
+                    onClick={() => {
+                      setHtmlCode("");
+                      setDebouncedHtml("");
+                    }}
+                    className="h-8 text-[11px] border-zinc-800 hover:bg-zinc-800 text-zinc-400 hover:text-red-400 gap-1.5"
+                    title="Limpiar editor"
+                  >
+                    <Trash2 className="h-3 w-3" />
+                    Limpiar
+                  </Button>
+                </div>
+              </div>
+            </CardHeader>
 
-                  {/* Textarea de Código HTML */}
-                  <div className="space-y-1.5">
-                    <div className="flex items-center justify-between text-xs">
-                      <label className="font-medium text-zinc-300">
-                        Pega aquí tu código HTML (1080×1920)
-                      </label>
-                      <span className="text-[11px] text-zinc-500 font-mono">
-                        {htmlCode.length} caracteres
-                      </span>
-                    </div>
-                    <textarea
-                      rows={14}
-                      value={htmlCode}
-                      onChange={(e) => {
-                        setHtmlCode(e.target.value);
-                        setIframeKey((k) => k + 1);
-                      }}
-                      placeholder="<!DOCTYPE html><html><head>...</head><body>...</body></html>"
-                      spellCheck={false}
-                      className="w-full rounded-xl border border-zinc-800 bg-zinc-950/80 p-3 text-xs sm:text-[13px] font-mono text-zinc-200 placeholder:text-zinc-600 focus:outline-none focus:ring-1 focus:ring-indigo-500 focus:border-indigo-500 transition-all resize-y leading-relaxed"
-                    />
-                    <p className="text-[11px] text-zinc-500">
-                      💡 Tip: Puedes usar CSS animations, SVG o GSAP. El motor renderiza en resolución nativa vertical 1080×1920 a 30fps.
-                    </p>
-                  </div>
-                </CardContent>
-              </Card>
-
-              {/* Card de Parámetros: Duración y Destino de Guardado */}
-              <Card className="border-zinc-800/80 bg-zinc-900/40 backdrop-blur-md shadow-xl">
-                <CardContent className="pt-5 space-y-4">
-                  {/* Selector de Duración (15s, 30s o 1 minuto + personalizado) */}
-                  <div className="space-y-2.5">
-                    <div className="flex items-center justify-between">
-                      <label className="text-xs font-medium text-zinc-300 flex items-center gap-1.5">
-                        <Clock className="h-3.5 w-3.5 text-zinc-400" />
-                        Duración del Video a Generar
-                      </label>
-                      <span className="text-[11px] font-mono text-indigo-400 font-semibold">
-                        {durationSeconds === 60
-                          ? "1 minuto (60s)"
-                          : `${durationSeconds} segundos`}{" "}
-                        • {durationSeconds * 30} frames
-                      </span>
-                    </div>
-
-                    <div className="grid grid-cols-3 gap-2">
-                      {DURATION_PRESETS.map((item) => (
-                        <button
-                          key={item.seconds}
-                          type="button"
-                          onClick={() => handleChangeDuration(item.seconds)}
-                          className={`py-2 px-2.5 rounded-xl border text-center transition-all relative ${
-                            durationSeconds === item.seconds
-                              ? "bg-indigo-600/20 border-indigo-500/80 text-white font-semibold shadow-sm ring-1 ring-indigo-500/40"
-                              : "bg-zinc-950/50 border-zinc-800/80 text-zinc-400 hover:text-zinc-200 hover:border-zinc-700"
-                          }`}
-                        >
-                          {item.badge && (
-                            <span className="absolute -top-2 right-1.5 bg-indigo-500 text-[9px] font-bold text-white px-1.5 py-0.5 rounded-full uppercase tracking-tighter shadow-sm">
-                              {item.badge}
-                            </span>
-                          )}
-                          <span className="text-xs sm:text-sm font-semibold block">{item.label}</span>
-                          <p className="text-[10px] text-zinc-500 leading-tight mt-0.5 truncate">{item.desc}</p>
-                        </button>
-                      ))}
-                    </div>
-
-                    {/* Selector de Duración Personalizada */}
-                    <div className="flex items-center gap-2 pt-1 text-xs text-zinc-400">
-                      <span className="text-[11px] text-zinc-400">Personalizado:</span>
-                      <input
-                        type="number"
-                        min={3}
-                        max={120}
-                        value={durationSeconds}
-                        onChange={(e) => {
-                          const val = parseInt(e.target.value, 10);
-                          if (!isNaN(val) && val >= 1 && val <= 120) {
-                            handleChangeDuration(val);
-                          }
-                        }}
-                        className="w-16 px-2 py-1 bg-zinc-950 border border-zinc-800 rounded-lg text-center text-xs font-mono text-white focus:outline-none focus:border-indigo-500"
-                      />
-                      <span className="text-[11px] text-zinc-500">segundos (soporta de 3s hasta 120s / 2 min)</span>
-                    </div>
-                  </div>
-
-                  {/* Selector de Destino de Guardado */}
-                  <div className="space-y-2 pt-2 border-t border-zinc-800/80">
-                    <label className="text-xs font-medium text-zinc-300 flex items-center justify-between">
-                      <span>Destino de Guardado del Video MP4</span>
-                      <span className="text-[11px] text-zinc-400 font-normal">
-                        {saveDestination === "device" ? "📱 Descarga Directa" : "☁️ Google Drive"}
-                      </span>
-                    </label>
-                    <div className="grid grid-cols-1 sm:grid-cols-2 gap-2">
-                      <button
-                        type="button"
-                        disabled={isLoading}
-                        onClick={() => setSaveDestination("device")}
-                        className={`p-3 rounded-xl border text-left transition-all flex items-start gap-2.5 ${
-                          saveDestination === "device"
-                            ? "bg-indigo-600/20 border-indigo-500/80 text-white shadow-sm ring-1 ring-indigo-500/40"
-                            : "bg-zinc-950/50 border-zinc-800/80 text-zinc-400 hover:text-zinc-200 hover:border-zinc-700"
-                        }`}
-                      >
-                        <Download
-                          className={`h-4 w-4 mt-0.5 shrink-0 ${
-                            saveDestination === "device" ? "text-indigo-400" : "text-zinc-500"
-                          }`}
-                        />
-                        <div className="space-y-0.5">
-                          <p className="text-xs font-semibold text-zinc-200">En mi dispositivo</p>
-                          <p className="text-[10px] text-zinc-400 leading-tight">
-                            Descarga directa del archivo .mp4
-                          </p>
-                        </div>
-                      </button>
-
-                      <button
-                        type="button"
-                        disabled={isLoading}
-                        onClick={() => setSaveDestination("drive")}
-                        className={`p-3 rounded-xl border text-left transition-all flex items-start gap-2.5 ${
-                          saveDestination === "drive"
-                            ? "bg-indigo-600/20 border-indigo-500/80 text-white shadow-sm ring-1 ring-indigo-500/40"
-                            : "bg-zinc-950/50 border-zinc-800/80 text-zinc-400 hover:text-zinc-200 hover:border-zinc-700"
-                        }`}
-                      >
-                        <HardDrive
-                          className={`h-4 w-4 mt-0.5 shrink-0 ${
-                            saveDestination === "drive" ? "text-emerald-400" : "text-zinc-500"
-                          }`}
-                        />
-                        <div className="space-y-0.5">
-                          <p className="text-xs font-semibold text-zinc-200">En Google Drive</p>
-                          <p className="text-[10px] text-zinc-400 leading-tight">
-                            Guardado en la nube y Biblioteca
-                          </p>
-                        </div>
-                      </button>
-                    </div>
-                  </div>
-
-                  {/* Botón Principal de Renderizado para HTML */}
-                  <div className="pt-2">
-                    <Button
-                      onClick={handleRenderVideo}
-                      disabled={isLoading || !htmlCode.trim()}
-                      className="w-full h-12 text-sm font-semibold rounded-xl transition-all shadow-lg gap-2.5 bg-gradient-to-r from-indigo-500 via-indigo-600 to-purple-600 hover:from-indigo-600 hover:to-purple-700 text-white shadow-indigo-500/25 active:scale-[0.99]"
-                    >
-                      {isLoading ? (
-                        <>
-                          <Loader2 className="h-4 w-4 animate-spin text-white" />
-                          Generando Video MP4 en la Nube ({durationSeconds}s)...
-                        </>
-                      ) : (
-                        <>
-                          <Play className="h-4 w-4 text-white fill-white" />
-                          Generar Video MP4 ({durationSeconds === 60 ? "1 min" : `${durationSeconds}s`})
-                        </>
-                      )}
-                    </Button>
-                    <p className="text-[11px] text-zinc-500 text-center mt-2">
-                      El código HTML se procesa en resolución nativa vertical 1080×1920 a 30fps.
-                    </p>
-                  </div>
-                </CardContent>
-              </Card>
-            </div>
-          ) : (
-            /* ==============================================================
-               MODO 2: FORMULARIO VISUAL REMOTION
-            ============================================================== */
-            <div className="space-y-5">
-              {/* Plantillas predefinidas */}
-              <div className="flex items-center gap-2 flex-wrap">
-                <Button
-                  variant="outline"
-                  size="sm"
-                  onClick={handleLoadTemplateZyrvae}
-                  className="border-zinc-800 hover:bg-zinc-800 text-xs gap-1.5 text-zinc-300"
-                >
-                  <Sparkles className="h-3.5 w-3.5 text-indigo-400" />
-                  Comercial ZYRVAE (30s)
-                </Button>
-                <Button
-                  variant="outline"
-                  size="sm"
-                  onClick={handleLoadTemplateSale}
-                  className="border-zinc-800 hover:bg-zinc-800 text-xs gap-1.5 text-zinc-300"
-                >
-                  <Sparkles className="h-3.5 w-3.5 text-rose-400" />
-                  Oferta Flash (15s)
-                </Button>
-                <Button
-                  variant="outline"
-                  size="sm"
-                  onClick={handleLoadTemplateSuccess}
-                  className="border-zinc-800 hover:bg-zinc-800 text-xs gap-1.5 text-zinc-300"
-                >
-                  <Sparkles className="h-3.5 w-3.5 text-emerald-400" />
-                  Caso de Éxito (1 min)
-                </Button>
+            <CardContent className="space-y-4">
+              {/* Nombre del archivo MP4 */}
+              <div className="space-y-1.5">
+                <label className="text-xs font-medium text-zinc-300">
+                  Nombre del archivo MP4 a descargar
+                </label>
+                <Input
+                  value={htmlTitle}
+                  disabled={isLoading}
+                  onChange={(e) => setHtmlTitle(e.target.value)}
+                  placeholder="Ej: Comercial_ZYRVAE"
+                  className="bg-zinc-950/70 border-zinc-800 text-zinc-100 text-sm focus:border-indigo-500"
+                />
               </div>
 
-              {/* Textos y Mensaje Comercial */}
-              <Card className="border-zinc-800/80 bg-zinc-900/40 backdrop-blur-md shadow-xl">
-                <CardHeader className="pb-3">
-                  <CardTitle className="text-base font-semibold text-white flex items-center gap-2">
-                    <Type className="h-4 w-4 text-indigo-400" />
-                    Textos y Mensaje Comercial
-                  </CardTitle>
-                  <CardDescription className="text-xs text-zinc-400">
-                    Los textos se sincronizan en vivo en la previsualización Remotion.
-                  </CardDescription>
-                </CardHeader>
-                <CardContent className="space-y-4">
-                  <div className="space-y-1.5">
-                    <label className="text-xs font-medium text-zinc-300">
-                      Título Principal del Anuncio
-                    </label>
-                    <Input
-                      value={videoProps.title}
-                      onChange={(e) => setVideoProps({ ...videoProps, title: e.target.value })}
-                      placeholder="Ej: Tu publicidad en video, al instante."
-                      className="bg-zinc-950/70 border-zinc-800 text-zinc-100 text-sm focus:border-indigo-500"
-                    />
-                  </div>
+              {/* Textarea optimizada sin bloqueos */}
+              <div className="space-y-1.5">
+                <div className="flex items-center justify-between text-xs">
+                  <label className="font-medium text-zinc-300">
+                    Código HTML (Resolución base 1080×1920)
+                  </label>
+                  <span className="text-[11px] text-zinc-500 font-mono">
+                    {htmlCode.length} caracteres
+                  </span>
+                </div>
+                <textarea
+                  rows={14}
+                  value={htmlCode}
+                  disabled={isLoading}
+                  onChange={(e) => setHtmlCode(e.target.value)}
+                  placeholder="<!DOCTYPE html><html><head>...</head><body>...</body></html>"
+                  spellCheck={false}
+                  className="w-full rounded-xl border border-zinc-800 bg-zinc-950/90 p-3 text-xs sm:text-[13px] font-mono text-zinc-200 placeholder:text-zinc-600 focus:outline-none focus:ring-1 focus:ring-indigo-500 focus:border-indigo-500 transition-all resize-y leading-relaxed"
+                />
+              </div>
+            </CardContent>
+          </Card>
 
-                  <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
-                    <div className="space-y-1.5">
-                      <label className="text-xs font-medium text-zinc-300">Subtítulo / Categoría</label>
-                      <Input
-                        value={videoProps.subtitle}
-                        onChange={(e) => setVideoProps({ ...videoProps, subtitle: e.target.value })}
-                        placeholder="Ej: Imprenta de Video"
-                        className="bg-zinc-950/70 border-zinc-800 text-zinc-100 text-xs focus:border-indigo-500"
-                      />
-                    </div>
-                    <div className="space-y-1.5">
-                      <label className="text-xs font-medium text-zinc-300">Nombre de Marca (Badge)</label>
-                      <Input
-                        value={videoProps.brandName}
-                        onChange={(e) => setVideoProps({ ...videoProps, brandName: e.target.value })}
-                        placeholder="Ej: ZYRVAE MEDIA STUDIO"
-                        className="bg-zinc-950/70 border-zinc-800 text-zinc-100 text-xs focus:border-indigo-500"
-                      />
-                    </div>
-                  </div>
+          {/* Card de Duración y Botón de Conversión */}
+          <Card className="border-zinc-800/80 bg-zinc-900/40 backdrop-blur-md shadow-xl">
+            <CardContent className="pt-5 space-y-4">
+              {/* Selector de Duración */}
+              <div className="space-y-2.5">
+                <div className="flex items-center justify-between">
+                  <label className="text-xs font-medium text-zinc-300 flex items-center gap-1.5">
+                    <Clock className="h-3.5 w-3.5 text-indigo-400" />
+                    2. Elige la Duración del Video MP4
+                  </label>
+                  <span className="text-[11px] font-mono text-indigo-400 font-semibold">
+                    {durationSeconds === 60
+                      ? "1 minuto (60s)"
+                      : `${durationSeconds} segundos`}
+                  </span>
+                </div>
 
-                  <div className="space-y-1.5">
-                    <label className="text-xs font-medium text-zinc-300">
-                      Descripción o Mensaje Secundario
-                    </label>
-                    <textarea
-                      rows={3}
-                      value={videoProps.description}
-                      onChange={(e) => setVideoProps({ ...videoProps, description: e.target.value })}
-                      placeholder="Escribe el mensaje publicitario de tu marca..."
-                      className="w-full rounded-md border border-zinc-800 bg-zinc-950/70 px-3 py-2 text-xs text-zinc-100 placeholder:text-zinc-500 focus:outline-none focus:ring-1 focus:ring-indigo-500 focus:border-indigo-500 transition-all resize-none"
-                    />
-                  </div>
-                </CardContent>
-              </Card>
-
-              {/* Métricas, CTA y Color */}
-              <Card className="border-zinc-800/80 bg-zinc-900/40 backdrop-blur-md shadow-xl">
-                <CardHeader className="pb-3">
-                  <CardTitle className="text-base font-semibold text-white flex items-center gap-2">
-                    <TrendingUp className="h-4 w-4 text-emerald-400" />
-                    Métricas, CTA y Color de Marca
-                  </CardTitle>
-                </CardHeader>
-                <CardContent className="space-y-4">
-                  <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
-                    <div className="space-y-1.5">
-                      <label className="text-xs font-medium text-zinc-300">Dato Destacado</label>
-                      <Input
-                        value={videoProps.statsValue}
-                        onChange={(e) => setVideoProps({ ...videoProps, statsValue: e.target.value })}
-                        placeholder="Ej: +300% o 50% OFF"
-                        className="bg-zinc-950/70 border-zinc-800 text-zinc-100 text-xs focus:border-indigo-500"
-                      />
-                    </div>
-                    <div className="space-y-1.5">
-                      <label className="text-xs font-medium text-zinc-300">Etiqueta del Dato</label>
-                      <Input
-                        value={videoProps.statsLabel}
-                        onChange={(e) => setVideoProps({ ...videoProps, statsLabel: e.target.value })}
-                        placeholder="Ej: Conversión"
-                        className="bg-zinc-950/70 border-zinc-800 text-zinc-100 text-xs focus:border-indigo-500"
-                      />
-                    </div>
-                    <div className="space-y-1.5">
-                      <label className="text-xs font-medium text-zinc-300">Botón de Acción (CTA)</label>
-                      <Input
-                        value={videoProps.callToAction}
-                        onChange={(e) => setVideoProps({ ...videoProps, callToAction: e.target.value })}
-                        placeholder="Ej: Potencia tu Marca"
-                        className="bg-zinc-950/70 border-zinc-800 text-zinc-100 text-xs focus:border-indigo-500"
-                      />
-                    </div>
-                  </div>
-
-                  {/* Selector de Color de Acento */}
-                  <div className="space-y-2 pt-2 border-t border-zinc-800/80">
-                    <label className="text-xs font-medium text-zinc-300 flex items-center justify-between">
-                      <span className="flex items-center gap-1.5">
-                        <Palette className="h-3.5 w-3.5 text-zinc-400" />
-                        Color de Acento
-                      </span>
-                      <span className="text-[11px] font-mono text-zinc-400">
-                        {videoProps.accentColor}
-                      </span>
-                    </label>
-                    <div className="flex items-center gap-2 flex-wrap">
-                      {COLOR_PRESETS.map((color) => (
-                        <button
-                          key={color.hex}
-                          type="button"
-                          onClick={() => setVideoProps({ ...videoProps, accentColor: color.hex })}
-                          className={`group flex items-center gap-1.5 px-2.5 py-1.5 rounded-lg border text-xs transition-all ${
-                            videoProps.accentColor.toLowerCase() === color.hex.toLowerCase()
-                              ? "bg-zinc-800 border-white text-white shadow-sm ring-1 ring-white/50"
-                              : "bg-zinc-950/50 border-zinc-800/80 text-zinc-400 hover:border-zinc-700 hover:text-zinc-200"
-                          }`}
-                        >
-                          <span
-                            className="w-3 h-3 rounded-full shrink-0 shadow-sm"
-                            style={{ backgroundColor: color.hex }}
-                          />
-                          <span className="text-[11px]">{color.name}</span>
-                        </button>
-                      ))}
-                      <div className="flex items-center gap-1.5 px-2 py-1 bg-zinc-950 border border-zinc-800 rounded-lg">
-                        <input
-                          type="color"
-                          value={videoProps.accentColor}
-                          onChange={(e) =>
-                            setVideoProps({ ...videoProps, accentColor: e.target.value })
-                          }
-                          className="w-5 h-5 rounded cursor-pointer bg-transparent border-0"
-                        />
-                        <span className="text-[10px] font-mono text-zinc-400">Custom</span>
-                      </div>
-                    </div>
-                  </div>
-
-                  {/* Selector de Duración Remotion (15s, 30s o 1 minuto + personalizado) */}
-                  <div className="space-y-2.5 pt-2 border-t border-zinc-800/80">
-                    <div className="flex items-center justify-between">
-                      <label className="text-xs font-medium text-zinc-300 flex items-center gap-1.5">
-                        <Clock className="h-3.5 w-3.5 text-zinc-400" />
-                        Duración del Video Remotion
-                      </label>
-                      <span className="text-[11px] font-mono text-indigo-400 font-semibold">
-                        {durationSeconds === 60 ? "1 minuto (60s)" : `${durationSeconds} segundos`} • {durationSeconds * 30} frames
-                      </span>
-                    </div>
-
-                    <div className="grid grid-cols-3 gap-2">
-                      {DURATION_PRESETS.map((item) => (
-                        <button
-                          key={item.seconds}
-                          type="button"
-                          onClick={() => handleChangeDuration(item.seconds)}
-                          className={`py-2 px-2.5 rounded-xl border text-center transition-all relative ${
-                            durationSeconds === item.seconds
-                              ? "bg-indigo-600/20 border-indigo-500/80 text-white font-semibold shadow-sm ring-1 ring-indigo-500/40"
-                              : "bg-zinc-950/50 border-zinc-800/80 text-zinc-400 hover:text-zinc-200 hover:border-zinc-700"
-                          }`}
-                        >
-                          {item.badge && (
-                            <span className="absolute -top-2 right-1.5 bg-indigo-500 text-[9px] font-bold text-white px-1.5 py-0.5 rounded-full uppercase tracking-tighter shadow-sm">
-                              {item.badge}
-                            </span>
-                          )}
-                          <span className="text-xs sm:text-sm font-semibold block">{item.label}</span>
-                          <p className="text-[10px] text-zinc-500 leading-tight mt-0.5 truncate">{item.desc}</p>
-                        </button>
-                      ))}
-                    </div>
-
-                    <div className="flex items-center gap-2 pt-1 text-xs text-zinc-400">
-                      <span className="text-[11px] text-zinc-400">Personalizado:</span>
-                      <input
-                        type="number"
-                        min={3}
-                        max={120}
-                        value={durationSeconds}
-                        onChange={(e) => {
-                          const val = parseInt(e.target.value, 10);
-                          if (!isNaN(val) && val >= 1 && val <= 120) {
-                            handleChangeDuration(val);
-                          }
-                        }}
-                        className="w-16 px-2 py-1 bg-zinc-950 border border-zinc-800 rounded-lg text-center text-xs font-mono text-white focus:outline-none focus:border-indigo-500"
-                      />
-                      <span className="text-[11px] text-zinc-500">segundos (hasta 120s)</span>
-                    </div>
-                  </div>
-
-                  {/* Destino de Guardado */}
-                  <div className="space-y-2 pt-2 border-t border-zinc-800/80">
-                    <label className="text-xs font-medium text-zinc-300 flex items-center justify-between">
-                      <span>Destino de Guardado</span>
-                      <span className="text-[11px] text-zinc-400 font-normal">
-                        {saveDestination === "device" ? "📱 Descarga Directa" : "☁️ Google Drive"}
-                      </span>
-                    </label>
-                    <div className="grid grid-cols-1 sm:grid-cols-2 gap-2">
-                      <button
-                        type="button"
-                        disabled={isLoading}
-                        onClick={() => setSaveDestination("device")}
-                        className={`p-3 rounded-xl border text-left transition-all flex items-start gap-2.5 ${
-                          saveDestination === "device"
-                            ? "bg-indigo-600/20 border-indigo-500/80 text-white shadow-sm ring-1 ring-indigo-500/40"
-                            : "bg-zinc-950/50 border-zinc-800/80 text-zinc-400 hover:text-zinc-200 hover:border-zinc-700"
-                        }`}
-                      >
-                        <Download
-                          className={`h-4 w-4 mt-0.5 shrink-0 ${
-                            saveDestination === "device" ? "text-indigo-400" : "text-zinc-500"
-                          }`}
-                        />
-                        <div className="space-y-0.5">
-                          <p className="text-xs font-semibold text-zinc-200">En mi dispositivo</p>
-                          <p className="text-[10px] text-zinc-400 leading-tight">
-                            Descarga directa (.mp4)
-                          </p>
-                        </div>
-                      </button>
-
-                      <button
-                        type="button"
-                        disabled={isLoading}
-                        onClick={() => setSaveDestination("drive")}
-                        className={`p-3 rounded-xl border text-left transition-all flex items-start gap-2.5 ${
-                          saveDestination === "drive"
-                            ? "bg-indigo-600/20 border-indigo-500/80 text-white shadow-sm ring-1 ring-indigo-500/40"
-                            : "bg-zinc-950/50 border-zinc-800/80 text-zinc-400 hover:text-zinc-200 hover:border-zinc-700"
-                        }`}
-                      >
-                        <HardDrive
-                          className={`h-4 w-4 mt-0.5 shrink-0 ${
-                            saveDestination === "drive" ? "text-emerald-400" : "text-zinc-500"
-                          }`}
-                        />
-                        <div className="space-y-0.5">
-                          <p className="text-xs font-semibold text-zinc-200">En Google Drive</p>
-                          <p className="text-[10px] text-zinc-400 leading-tight">
-                            Guardado en la nube y Biblioteca
-                          </p>
-                        </div>
-                      </button>
-                    </div>
-                  </div>
-
-                  {/* Botón Principal Remotion */}
-                  <div className="pt-2">
-                    <Button
-                      onClick={handleRenderVideo}
+                <div className="grid grid-cols-3 gap-2">
+                  {DURATION_PRESETS.map((item) => (
+                    <button
+                      key={item.seconds}
+                      type="button"
                       disabled={isLoading}
-                      className="w-full h-12 text-sm font-semibold rounded-xl transition-all shadow-lg gap-2.5 bg-gradient-to-r from-indigo-500 via-indigo-600 to-purple-600 hover:from-indigo-600 hover:to-purple-700 text-white shadow-indigo-500/25 active:scale-[0.99]"
+                      onClick={() => handleChangeDuration(item.seconds)}
+                      className={`py-2.5 px-2.5 rounded-xl border text-center transition-all relative ${
+                        durationSeconds === item.seconds
+                          ? "bg-indigo-600/20 border-indigo-500/80 text-white font-semibold shadow-sm ring-1 ring-indigo-500/40"
+                          : "bg-zinc-950/50 border-zinc-800/80 text-zinc-400 hover:text-zinc-200 hover:border-zinc-700"
+                      }`}
                     >
-                      {isLoading ? (
-                        <>
-                          <Loader2 className="h-4 w-4 animate-spin text-white" />
-                          Generando Video MP4 en la Nube ({durationSeconds}s)...
-                        </>
-                      ) : (
-                        <>
-                          <Clapperboard className="h-4 w-4 text-white" />
-                          Generar Video MP4 ({durationSeconds === 60 ? "1 min" : `${durationSeconds}s`})
-                        </>
+                      {item.badge && (
+                        <span className="absolute -top-2 right-1.5 bg-emerald-600 text-[9px] font-bold text-white px-1.5 py-0.5 rounded-full uppercase tracking-tighter shadow-sm">
+                          {item.badge}
+                        </span>
                       )}
-                    </Button>
+                      <span className="text-xs sm:text-sm font-semibold block">
+                        {item.label}
+                      </span>
+                      <p className="text-[10px] text-zinc-500 leading-tight mt-0.5 truncate">
+                        {item.desc}
+                      </p>
+                    </button>
+                  ))}
+                </div>
+
+                {/* Duración personalizada */}
+                <div className="flex items-center gap-2 pt-1 text-xs text-zinc-400">
+                  <span className="text-[11px] text-zinc-400">Otra duración:</span>
+                  <input
+                    type="number"
+                    min={1}
+                    max={120}
+                    disabled={isLoading}
+                    value={durationSeconds}
+                    onChange={(e) => {
+                      const val = parseInt(e.target.value, 10);
+                      if (!isNaN(val) && val >= 1 && val <= 120) {
+                        handleChangeDuration(val);
+                      }
+                    }}
+                    className="w-16 px-2 py-1 bg-zinc-950 border border-zinc-800 rounded-lg text-center text-xs font-mono text-white focus:outline-none focus:border-indigo-500"
+                  />
+                  <span className="text-[11px] text-zinc-500">
+                    segundos (de 1s a 120s)
+                  </span>
+                </div>
+              </div>
+
+              {/* Barra de Progreso en Vivo durante el Renderizado */}
+              {isLoading && (
+                <div className="p-3.5 rounded-xl bg-zinc-950/90 border border-indigo-500/40 space-y-2">
+                  <div className="flex items-center justify-between text-xs">
+                    <span className="text-indigo-300 font-medium flex items-center gap-2">
+                      <Loader2 className="h-3.5 w-3.5 animate-spin text-indigo-400" />
+                      {progressStatus || "Convirtiendo HTML a MP4..."}
+                    </span>
+                    <span className="font-mono text-xs font-bold text-indigo-400">
+                      {progressPercent}%
+                    </span>
                   </div>
-                </CardContent>
-              </Card>
-            </div>
-          )}
+                  <div className="w-full h-2 bg-zinc-800 rounded-full overflow-hidden">
+                    <div
+                      className="h-full bg-gradient-to-r from-indigo-500 via-purple-500 to-emerald-400 transition-all duration-300"
+                      style={{ width: `${Math.max(5, progressPercent)}%` }}
+                    />
+                  </div>
+                </div>
+              )}
+
+              {/* Botón Principal de Conversión y Descarga Directa */}
+              <div className="pt-1">
+                <Button
+                  onClick={handleRenderVideo}
+                  disabled={isLoading || !htmlCode.trim()}
+                  className="w-full h-12 text-sm font-semibold rounded-xl transition-all shadow-lg gap-2.5 bg-gradient-to-r from-indigo-500 via-indigo-600 to-purple-600 hover:from-indigo-600 hover:to-purple-700 text-white shadow-indigo-500/25 active:scale-[0.99]"
+                >
+                  {isLoading ? (
+                    <>
+                      <Loader2 className="h-4 w-4 animate-spin text-white" />
+                      Convirtiendo HTML a MP4 ({durationSeconds}s)...
+                    </>
+                  ) : (
+                    <>
+                      <Play className="h-4 w-4 text-white fill-white" />
+                      Convertir HTML a MP4 y Descargar ({durationSeconds === 60 ? "1 min" : `${durationSeconds}s`})
+                    </>
+                  )}
+                </Button>
+                <p className="text-[11px] text-zinc-500 text-center mt-2">
+                  Descarga directa del archivo .mp4 en tu dispositivo (H.264 compatible con Reels, TikTok y WhatsApp).
+                </p>
+              </div>
+            </CardContent>
+          </Card>
         </div>
 
-        {/* Columna Derecha: Smartphone Mockup con Previsualización (HTML Sandbox o Remotion Player) */}
+        {/* Columna Derecha: Smartphone Mockup con Previsualización en Vivo */}
         <div
           className={`lg:col-span-5 flex flex-col items-center justify-center space-y-3 ${
-            mobileTab === "preview" ? "block" : "hidden lg:flex"
+            mobileTab === "preview" ? "flex" : "hidden lg:flex"
           }`}
         >
-          {/* Top Bar del Visor */}
+          {/* Barra superior del visor */}
           <div className="w-full max-w-[280px] xs:max-w-[320px] sm:max-w-[340px] flex items-center justify-between px-2 text-xs">
             <span className="font-semibold uppercase tracking-wider text-zinc-300 flex items-center gap-1.5 text-[11px]">
               <Smartphone className="h-3.5 w-3.5 text-zinc-400" />
-              {mode === "html" ? "Previsualización HTML (9:16)" : "Previsualización Remotion (9:16)"}
+              Vista Previa HTML (9:16)
             </span>
             <div className="flex items-center gap-1.5">
-              {mode === "html" && (
-                <button
-                  type="button"
-                  onClick={() => setIframeKey((k) => k + 1)}
-                  className="p-1 rounded hover:bg-zinc-800 text-zinc-400 hover:text-zinc-200 transition-colors"
-                  title="Recargar vista previa"
-                >
-                  <RotateCcw className="h-3 w-3" />
-                </button>
-              )}
+              <button
+                type="button"
+                onClick={() => setIframeKey((k) => k + 1)}
+                className="p-1 rounded hover:bg-zinc-800 text-zinc-400 hover:text-zinc-200 transition-colors"
+                title="Reiniciar animación"
+              >
+                <RotateCcw className="h-3 w-3" />
+              </button>
               <Badge
                 variant="outline"
                 className="text-[10px] font-mono border-zinc-800 text-zinc-400"
@@ -1105,7 +797,7 @@ export default function StudioPage() {
             ref={phoneContainerRef}
             className="relative w-full max-w-[280px] xs:max-w-[320px] sm:max-w-[340px] aspect-[9/16] rounded-[2.5rem] p-3 sm:p-3.5 bg-gradient-to-b from-zinc-800 via-zinc-900 to-zinc-950 border-[4px] sm:border-[5px] border-zinc-800 shadow-2xl shadow-black ring-1 ring-zinc-700/50 flex flex-col"
           >
-            {/* Dynamic Island / Notch */}
+            {/* Dynamic Island */}
             <div className="absolute top-3.5 sm:top-4 left-1/2 -translate-x-1/2 z-30 pointer-events-none">
               <div className="w-20 sm:w-24 h-3.5 sm:h-4 bg-zinc-950 rounded-full border border-zinc-800/80 flex items-center justify-end px-2">
                 <div className="w-1.5 sm:w-2 h-1.5 sm:h-2 rounded-full bg-zinc-800" />
@@ -1114,9 +806,19 @@ export default function StudioPage() {
 
             {/* Pantalla del Smartphone */}
             <div className="relative flex-1 rounded-[1.8rem] overflow-hidden bg-zinc-950 border border-zinc-800/80 flex flex-col">
-              {mode === "html" ? (
-                /* Previsualizador de HTML interactivo mediante iframe escalado a 1080x1920 */
-                <div className="relative w-full h-full overflow-hidden bg-black flex items-center justify-center">
+              <div className="relative w-full h-full overflow-hidden bg-black flex items-center justify-center">
+                {isLoading ? (
+                  /* Mientras renderiza, suspendemos el iframe pesado para que la página nunca se trabe */
+                  <div className="flex flex-col items-center justify-center p-6 text-center space-y-3">
+                    <Loader2 className="h-8 w-8 animate-spin text-indigo-400" />
+                    <p className="text-xs font-semibold text-zinc-200">
+                      Generando archivo .MP4 ({progressPercent}%)
+                    </p>
+                    <p className="text-[11px] text-zinc-400">
+                      {progressStatus || "Procesando fotogramas..."}
+                    </p>
+                  </div>
+                ) : (
                   <div
                     style={{
                       width: 1080,
@@ -1128,34 +830,22 @@ export default function StudioPage() {
                   >
                     <iframe
                       key={iframeKey}
-                      srcDoc={htmlCode || "<body style='background:#09090b;'></body>"}
+                      srcDoc={debouncedHtml || "<body style='background:#09090b;'></body>"}
                       title="Previsualización de Código HTML"
                       sandbox="allow-scripts"
                       className="w-[1080px] h-[1920px] border-0 bg-zinc-950"
                     />
                   </div>
+                )}
 
-                  {/* Badge flotante indicador HTML LIVE */}
-                  <div className="absolute top-6 left-3.5 z-20 pointer-events-none flex items-center gap-1.5 px-2.5 py-1 rounded-full bg-zinc-950/80 border border-zinc-800/80 backdrop-blur-md text-[10px] text-zinc-300 font-mono">
-                    <span className="w-1.5 h-1.5 rounded-full bg-emerald-400 animate-pulse" />
-                    <span>HTML LIVE • {durationSeconds === 60 ? "1 min" : `${durationSeconds}s`}</span>
-                  </div>
+                {/* Badge flotante indicador HTML LIVE */}
+                <div className="absolute top-6 left-3.5 z-20 pointer-events-none flex items-center gap-1.5 px-2.5 py-1 rounded-full bg-zinc-950/80 border border-zinc-800/80 backdrop-blur-md text-[10px] text-zinc-300 font-mono">
+                  <span className="w-1.5 h-1.5 rounded-full bg-emerald-400 animate-pulse" />
+                  <span>
+                    HTML LIVE • {durationSeconds === 60 ? "1 min" : `${durationSeconds}s`}
+                  </span>
                 </div>
-              ) : (
-                /* Previsualizador de Remotion */
-                <div className="relative w-full h-full">
-                  <RemotionPreviewPlayer
-                    props={videoProps}
-                    durationInSeconds={durationSeconds}
-                  />
-
-                  {/* Badge flotante indicador REMOTION LIVE */}
-                  <div className="absolute top-6 left-3.5 z-20 pointer-events-none flex items-center gap-1.5 px-2.5 py-1 rounded-full bg-zinc-950/80 border border-zinc-800/80 backdrop-blur-md text-[10px] text-zinc-300 font-mono">
-                    <span className="w-1.5 h-1.5 rounded-full bg-indigo-400 animate-pulse" />
-                    <span>REMOTION LIVE • {durationSeconds === 60 ? "1 min" : `${durationSeconds}s`}</span>
-                  </div>
-                </div>
-              )}
+              </div>
 
               {/* Home bar inferior */}
               <div className="absolute bottom-1.5 left-1/2 -translate-x-1/2 w-24 sm:w-28 h-1 bg-zinc-600/60 rounded-full pointer-events-none z-30" />
@@ -1163,14 +853,12 @@ export default function StudioPage() {
           </div>
 
           <p className="text-[11px] text-zinc-400 text-center max-w-[300px] leading-relaxed">
-            {mode === "html"
-              ? `Vista previa en vivo del código HTML en formato 9:16 vertical (${durationSeconds === 60 ? "1 min" : `${durationSeconds}s`}). Cualquier cambio se refleja al instante.`
-              : `Previsualización Remotion con timeline y controles interactivos (${durationSeconds === 60 ? "1 min" : `${durationSeconds}s`}).`}
+            Vista previa en tiempo real en proporción 9:16 vertical ({durationSeconds === 60 ? "1 min" : `${durationSeconds}s`}).
           </p>
         </div>
       </div>
 
-      {/* Render Dialog Result Modal */}
+      {/* Modal de Resultado con Reproductor MP4 Integrado y Botón de Descarga */}
       <Dialog open={showResultModal} onOpenChange={setShowResultModal}>
         <DialogContent className="w-[calc(100vw-2rem)] sm:max-w-md bg-zinc-950 border-zinc-800 text-zinc-100 rounded-2xl p-5 sm:p-6">
           <DialogHeader>
@@ -1189,11 +877,7 @@ export default function StudioPage() {
             </div>
             <DialogTitle className="text-base sm:text-lg font-semibold">
               {feedback?.type === "success"
-                ? feedback?.isDirectDownload
-                  ? "¡Video MP4 Generado y Descargado!"
-                  : mode === "html"
-                  ? "¡Conversión HTML a MP4 iniciada!"
-                  : "¡Renderizado Remotion iniciado!"
+                ? "¡Video MP4 Generado y Descargado!"
                 : "Error al generar video"}
             </DialogTitle>
             <DialogDescription className="text-zinc-400 text-xs leading-relaxed pt-1">
@@ -1208,54 +892,40 @@ export default function StudioPage() {
           )}
 
           {feedback?.type === "success" && (
-            <div className="p-3.5 rounded-xl bg-zinc-900/60 border border-zinc-800/80 space-y-2 text-xs">
-              <div className="flex items-center justify-between text-zinc-300">
-                <span className="text-zinc-400">Título:</span>
-                <span className="font-semibold text-white">
-                  {mode === "html" ? htmlTitle : videoProps.title}
-                </span>
-              </div>
-              <div className="flex items-center justify-between text-zinc-300">
-                <span className="text-zinc-400">Motor:</span>
-                <span className="font-semibold text-indigo-400">
-                  {feedback?.engine || (mode === "html" ? "Convertidor HTML a MP4" : "Remotion Ultra HD")}
-                </span>
-              </div>
-              <div className="flex items-center justify-between text-zinc-300">
-                <span className="text-zinc-400">Duración:</span>
-                <span className="font-semibold text-white">
-                  {durationSeconds === 60 ? "1 minuto (60s)" : `${durationSeconds} segundos`} (30fps)
-                </span>
-              </div>
-              <div className="flex items-center justify-between text-zinc-300">
-                <span className="text-zinc-400">Destino:</span>
-                <span className="font-semibold text-emerald-400">
-                  {feedback?.isDirectDownload
-                    ? "📱 Descarga Directa en tu Dispositivo (Completada)"
-                    : saveDestination === "device"
-                    ? "📱 En este Dispositivo"
-                    : "☁️ Google Drive (Biblioteca)"}
-                </span>
-              </div>
+            <div className="space-y-3">
+              {/* Reproductor de video del MP4 recién generado */}
+              {feedback.downloadUrl && (
+                <div className="rounded-xl overflow-hidden border border-zinc-800 bg-black flex justify-center max-h-56">
+                  <video
+                    src={feedback.downloadUrl}
+                    controls
+                    autoPlay
+                    loop
+                    playsInline
+                    className="h-52 w-auto object-contain"
+                  />
+                </div>
+              )}
 
-              <div className="pt-2 border-t border-zinc-800 flex items-center justify-between">
-                <span className="text-[11px] text-zinc-400">Estado:</span>
-                {feedback?.isDirectDownload ? (
-                  <span className="text-xs text-emerald-400 inline-flex items-center gap-1 font-medium">
-                    <CheckCircle2 className="h-3.5 w-3.5" />
-                    Listo en tu carpeta de descargas
+              <div className="p-3.5 rounded-xl bg-zinc-900/60 border border-zinc-800/80 space-y-2 text-xs">
+                <div className="flex items-center justify-between text-zinc-300">
+                  <span className="text-zinc-400">Archivo:</span>
+                  <span className="font-semibold text-white font-mono">
+                    {feedback.filename || `${htmlTitle}.mp4`}
                   </span>
-                ) : (
-                  <a
-                    href="https://github.com/jerepe244-coder/zyrvae-media-studio-desde-cero-es/actions/workflows/render-video.yml"
-                    target="_blank"
-                    rel="noreferrer"
-                    className="text-xs text-indigo-400 hover:text-indigo-300 inline-flex items-center gap-1 font-medium hover:underline"
-                  >
-                    Ver en GitHub Actions
-                    <ExternalLink className="h-3 w-3" />
-                  </a>
-                )}
+                </div>
+                <div className="flex items-center justify-between text-zinc-300">
+                  <span className="text-zinc-400">Motor utilizado:</span>
+                  <span className="font-semibold text-indigo-400">
+                    {feedback.engine}
+                  </span>
+                </div>
+                <div className="flex items-center justify-between text-zinc-300">
+                  <span className="text-zinc-400">Duración:</span>
+                  <span className="font-semibold text-white">
+                    {durationSeconds === 60 ? "1 minuto (60s)" : `${durationSeconds} segundos`}
+                  </span>
+                </div>
               </div>
             </div>
           )}
@@ -1268,35 +938,23 @@ export default function StudioPage() {
             >
               Cerrar
             </Button>
-            {feedback?.type === "success" && (
-              feedback?.isDirectDownload && feedback?.downloadUrl ? (
-                <Button
-                  onClick={() => {
-                    if (feedback.downloadUrl) {
-                      const a = document.createElement("a");
-                      a.href = feedback.downloadUrl;
-                      a.download = feedback.filename || "video.mp4";
-                      document.body.appendChild(a);
-                      a.click();
-                      document.body.removeChild(a);
-                    }
-                  }}
-                  className="inline-flex items-center justify-center px-4 py-2 rounded-md text-xs font-medium bg-emerald-600 hover:bg-emerald-700 text-white transition-colors gap-1.5"
-                >
-                  <Download className="h-3.5 w-3.5" />
-                  Volver a Descargar
-                </Button>
-              ) : (
-                <a
-                  href="https://github.com/jerepe244-coder/zyrvae-media-studio-desde-cero-es/actions/workflows/render-video.yml"
-                  target="_blank"
-                  rel="noreferrer"
-                  className="inline-flex items-center justify-center px-4 py-2 rounded-md text-xs font-medium bg-indigo-600 hover:bg-indigo-700 text-white transition-colors gap-1.5"
-                >
-                  Seguir en GitHub
-                  <ExternalLink className="h-3 w-3" />
-                </a>
-              )
+            {feedback?.type === "success" && feedback?.downloadUrl && (
+              <Button
+                onClick={() => {
+                  if (feedback.downloadUrl) {
+                    const a = document.createElement("a");
+                    a.href = feedback.downloadUrl;
+                    a.download = feedback.filename || "video.mp4";
+                    document.body.appendChild(a);
+                    a.click();
+                    document.body.removeChild(a);
+                  }
+                }}
+                className="inline-flex items-center justify-center px-4 py-2 rounded-md text-xs font-medium bg-emerald-600 hover:bg-emerald-700 text-white transition-colors gap-1.5"
+              >
+                <Download className="h-3.5 w-3.5" />
+                Volver a Descargar MP4
+              </Button>
             )}
           </DialogFooter>
         </DialogContent>

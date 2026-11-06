@@ -1,85 +1,134 @@
 import { spawn } from "node:child_process";
 import fs from "node:fs";
-import path from "node:path";
-import os from "node:os";
 import puppeteer from "puppeteer";
 import ffmpegStatic from "ffmpeg-static";
 
-// Obtener ruta del binario FFmpeg (usar variable de entorno o binario estático)
-const FFMPEG_PATH = process.env.FFMPEG_PATH || ffmpegStatic || "ffmpeg";
+function resolveFfmpegPath() {
+  if (process.env.FFMPEG_PATH && fs.existsSync(process.env.FFMPEG_PATH)) {
+    return process.env.FFMPEG_PATH;
+  }
+  if (ffmpegStatic && fs.existsSync(ffmpegStatic)) {
+    return ffmpegStatic;
+  }
+  if (fs.existsSync("/usr/bin/ffmpeg")) {
+    return "/usr/bin/ffmpeg";
+  }
+  return "ffmpeg";
+}
 
-// Script de reloj virtual para control determinista frame por frame
+function resolveChromiumPath() {
+  const candidates = [
+    process.env.PUPPETEER_EXECUTABLE_PATH,
+    "/usr/bin/chromium",
+    "/usr/bin/chromium-browser",
+    "/usr/bin/google-chrome-stable",
+    "/usr/bin/google-chrome",
+  ].filter(Boolean);
+
+  for (const candidate of candidates) {
+    if (fs.existsSync(candidate)) {
+      return candidate;
+    }
+  }
+  return undefined;
+}
+
+const FFMPEG_PATH = resolveFfmpegPath();
+
+// Script único de reloj virtual determinista para sincronizar CSS Animations, Web Animations API, rAF y timers
 const VIRTUAL_CLOCK_SCRIPT = `
 (function() {
   if (window.__virtualClockInitialized) return;
   window.__virtualClockInitialized = true;
   window.__virtualTime = 0;
-  
+
   var origPerfNow = window.performance ? window.performance.now.bind(window.performance) : null;
   if (origPerfNow) {
-    try { window.performance.now = function() { return window.__virtualTime; }; } catch (e) {}
+    try {
+      window.performance.now = function() { return window.__virtualTime; };
+    } catch (e) {}
   }
-  
+
   var origDateNow = Date.now.bind(Date);
   var startTime = origDateNow();
-  try { Date.now = function() { return startTime + window.__virtualTime; }; } catch (e) {}
+  try {
+    Date.now = function() { return startTime + window.__virtualTime; };
+  } catch (e) {}
 
-  var rafCallbacks = new Set();
-  window.__rafCallbacks = rafCallbacks;
+  var rafCallbacks = new Map();
+  var rafIdCounter = 1;
   window.requestAnimationFrame = function(cb) {
-    var id = Math.random();
-    rafCallbacks.add({ id: id, cb: cb });
+    var id = rafIdCounter++;
+    rafCallbacks.set(id, cb);
     return id;
   };
   window.cancelAnimationFrame = function(id) {
-    rafCallbacks.forEach(function(item) {
-      if (item.id === id) { rafCallbacks.delete(item); }
-    });
+    rafCallbacks.delete(id);
   };
 
   window.__stepVirtualTime = function(newTimeMs) {
     window.__virtualTime = newTimeMs;
-    var toRun = Array.from(rafCallbacks);
+
+    var pending = Array.from(rafCallbacks.entries());
     rafCallbacks.clear();
-    for (var i = 0; i < toRun.length; i++) {
-      try { toRun[i].cb(newTimeMs); } catch (e) { console.error(e); }
+    for (var i = 0; i < pending.length; i++) {
+      try {
+        pending[i][1](newTimeMs);
+      } catch (e) {}
     }
+
     if (document.getAnimations) {
       try {
         var animations = document.getAnimations({ subtree: true });
         for (var j = 0; j < animations.length; j++) {
+          var anim = animations[j];
           try {
-            animations[j].pause();
-            animations[j].currentTime = newTimeMs;
+            anim.pause();
+            anim.currentTime = newTimeMs;
           } catch (err) {}
         }
       } catch (e) {}
     }
+
     if (typeof window.__seekToTime === "function") {
-      try { window.__seekToTime(newTimeMs); } catch (e) {}
+      try {
+        window.__seekToTime(newTimeMs);
+      } catch (e) {}
     }
   };
 })();
 `;
 
 /**
- * Prepara el código HTML para que tenga la estructura adecuada de resolución y estilos base.
+ * Prepara y normaliza cualquier código HTML pegado por el usuario para garantizar
+ * resolución exacta (por defecto 1080x1920) sin desbordes ni bloqueos.
  */
 export function sanitizeHtml(rawHtml, width = 1080, height = 1920) {
-  let html = (rawHtml || "").trim();
+  let html = String(rawHtml || "").trim();
 
-  if (!html.toLowerCase().includes("<html") && !html.toLowerCase().includes("<!doctype")) {
-    html = `<!DOCTYPE html>
+  const baseResetStyle = `<style id="__zyrvae_base_reset">
+    html, body {
+      width: ${width}px !important;
+      height: ${height}px !important;
+      margin: 0 !important;
+      padding: 0;
+      overflow: hidden !important;
+      box-sizing: border-box;
+    }
+  </style>`;
+
+  const hasHtmlTag = /<html[\s>]/i.test(html) || /<!doctype/i.test(html);
+
+  if (!hasHtmlTag) {
+    return `<!DOCTYPE html>
 <html lang="es">
 <head>
   <meta charset="UTF-8">
   <meta name="viewport" content="width=${width}, height=${height}">
+  ${baseResetStyle}
   <style>
     * { margin: 0; padding: 0; box-sizing: border-box; }
-    html, body {
-      width: ${width}px;
-      height: ${height}px;
-      overflow: hidden;
+    body {
       background: #09090b;
       color: #ffffff;
       font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
@@ -91,275 +140,310 @@ export function sanitizeHtml(rawHtml, width = 1080, height = 1920) {
   ${html}
 </body>
 </html>`;
-  } else {
-    // Inyectar el script del reloj virtual en el head
-    if (html.toLowerCase().includes("<head")) {
-      html = html.replace(/<head([^>]*)>/i, `<head$1>\n  <script>${VIRTUAL_CLOCK_SCRIPT}</script>`);
-    } else {
-      html = `<script>${VIRTUAL_CLOCK_SCRIPT}</script>\n` + html;
-    }
+  }
 
-    // Si ya tiene head pero no charset UTF-8
-    if (!html.toLowerCase().includes("charset")) {
-      html = html.replace(/<head([^>]*)>/i, '<head$1>\n  <meta charset="UTF-8">');
-    }
-    // Asegurar que el body tenga el tamaño correcto si no lo tiene
-    if (!html.includes(`width: ${width}px`)) {
-      html = html.replace(
-        /<head([^>]*)>/i,
-        `<head$1>\n  <style>html, body { width: ${width}px; height: ${height}px; margin: 0; overflow: hidden; }</style>`
-      );
-    }
+  if (/<head[\s>]/i.test(html)) {
+    html = html.replace(/<head([^>]*)>/i, (_, attrs) => {
+      return `<head${attrs}>\n  <meta charset="UTF-8">\n  ${baseResetStyle}\n  <script>${VIRTUAL_CLOCK_SCRIPT}</script>`;
+    });
+  } else if (/<html([^>]*)>/i.test(html)) {
+    html = html.replace(/<html([^>]*)>/i, (_, attrs) => {
+      return `<html${attrs}>\n<head>\n  <meta charset="UTF-8">\n  ${baseResetStyle}\n  <script>${VIRTUAL_CLOCK_SCRIPT}</script>\n</head>`;
+    });
+  } else {
+    html = `${baseResetStyle}\n<script>${VIRTUAL_CLOCK_SCRIPT}</script>\n${html}`;
   }
 
   return html;
 }
 
+// Instancia persistente (warm browser) para evitar el costo de arranque en frío en cada render
+let sharedBrowser = null;
+let browserLaunchPromise = null;
+
+export async function getSharedBrowser() {
+  if (sharedBrowser && sharedBrowser.connected) {
+    return sharedBrowser;
+  }
+
+  if (browserLaunchPromise) {
+    return browserLaunchPromise;
+  }
+
+  browserLaunchPromise = (async () => {
+    const executablePath = resolveChromiumPath();
+    console.log(`[Renderer] Lanzando navegador Chromium (${executablePath || "bundled"})...`);
+
+    const browser = await puppeteer.launch({
+      headless: true,
+      executablePath,
+      args: [
+        "--no-sandbox",
+        "--disable-setuid-sandbox",
+        "--disable-dev-shm-usage",
+        "--disable-gpu",
+        "--no-first-run",
+        "--disable-extensions",
+        "--mute-audio",
+        "--disable-background-networking",
+        "--disable-background-timer-throttling",
+        "--disable-backgrounding-occluded-windows",
+        "--disable-breakpad",
+        "--disable-client-side-phishing-detection",
+        "--disable-default-apps",
+        "--disable-features=Translate,BackForwardCache,AcceptCHFrame,MediaRouter,OptimizationHints",
+        "--disable-ipc-flooding-protection",
+        "--disable-renderer-backgrounding",
+        "--font-render-hinting=none",
+      ],
+    });
+
+    browser.on("disconnected", () => {
+      console.log("[Renderer] Navegador Chromium desconectado, se relanzará en la próxima petición.");
+      if (sharedBrowser === browser) {
+        sharedBrowser = null;
+      }
+    });
+
+    sharedBrowser = browser;
+    browserLaunchPromise = null;
+    return browser;
+  })().catch((err) => {
+    browserLaunchPromise = null;
+    sharedBrowser = null;
+    throw err;
+  });
+
+  return browserLaunchPromise;
+}
+
+// Precalentar el navegador en segundo plano al iniciar el servidor
+export function warmUpBrowser() {
+  getSharedBrowser()
+    .then(() => console.log("[Renderer] Warm browser listo para renderizar al instante."))
+    .catch((err) => console.warn("[Renderer] Aviso en precalentamiento de browser:", err.message));
+}
+
 /**
- * Motor de renderizado: Carga el HTML en Chromium Headless vía Puppeteer,
- * avanza la línea de tiempo frame por frame de forma determinista y canaliza los fotogramas
- * directamente a FFmpeg por tubería stdin para generar un archivo MP4 estándar H.264.
+ * Motor de renderizado determinista y ultra-rápido de HTML a MP4:
+ * 1. Usa el navegador precalentado y mantiene el layout nativo 1080x1920 con escalado eficiente.
+ * 2. Captura los fotogramas con presupuesto de tiempo adaptativo para nunca exceder límites de CPU/timeout.
+ * 3. Cierra la pestaña de Chromium antes de codificar con FFmpeg para reducir el consumo de RAM a la mitad.
  */
 export async function renderHtmlToMp4({
   html,
-  duration = 10,
-  fps = 30,
+  duration = 15,
+  fps = 24,
   width = 1080,
   height = 1920,
   outputPath,
   onProgress,
 }) {
-  const totalFrames = Math.max(1, Math.round(duration * fps));
-  const frameIntervalMs = 1000 / fps;
-  const finalHtml = sanitizeHtml(html, width, height);
+  const safeDuration = Math.min(Math.max(Number(duration) || 15, 1), 120);
+  const layoutWidth = Number(width) || 1080;
+  const layoutHeight = Number(height) || 1920;
 
-  console.log(`[Renderer] Iniciando renderizado: ${width}x${height} @ ${fps}fps, duración: ${duration}s (${totalFrames} fotogramas)`);
-  console.log(`[Renderer] FFmpeg binary: ${FFMPEG_PATH}`);
+  // Escala de rasterizado 0.5 (540x960 sobre layout exacto 1080x1920) para máxima velocidad y bajo uso de RAM
+  const scaleFactor = layoutWidth > 720 ? 0.5 : 1;
+  const finalHtml = sanitizeHtml(html, layoutWidth, layoutHeight);
 
-  // 1. Lanzar Puppeteer optimizado para servidores con recursos limitados (Render.com 512MB RAM, Railway)
-  const browser = await puppeteer.launch({
-    headless: "shell",
-    executablePath: process.env.PUPPETEER_EXECUTABLE_PATH || undefined,
-    args: [
-      "--no-sandbox",
-      "--disable-setuid-sandbox",
-      "--disable-dev-shm-usage",
-      "--disable-gpu",
-      "--disable-software-rasterizer",
-      "--no-first-run",
-      "--no-zygote",
-      "--disable-extensions",
-      "--mute-audio",
-      "--js-flags=--max-old-space-size=192",
-      "--disable-background-networking",
-      "--disable-background-timer-throttling",
-      "--disable-backgrounding-occluded-windows",
-      "--disable-breakpad",
-      "--disable-client-side-phishing-detection",
-      "--disable-default-apps",
-      "--disable-features=Translate,BackForwardCache,AcceptCHFrame,MediaRouter,OptimizationHints",
-      "--disable-ipc-flooding-protection",
-      "--disable-renderer-backgrounding",
-      `--window-size=${width},${height}`,
-    ],
-    defaultViewport: {
-      width,
-      height,
-      deviceScaleFactor: 1,
-    },
-  });
+  console.log(
+    `[Renderer] Renderizando: layout ${layoutWidth}x${layoutHeight} (scale ${scaleFactor}), duración: ${safeDuration}s`
+  );
+
+  let browser = await getSharedBrowser();
+  let page = null;
+  const frameBuffers = [];
+  let targetFrames = Math.min(Math.max(Math.round(safeDuration * Math.min(fps, 15)), 24), 150);
 
   try {
-    const page = await browser.newPage();
-    page.setDefaultNavigationTimeout(10000);
-    page.setDefaultTimeout(10000);
-    await page.setViewport({ width, height, deviceScaleFactor: 1 });
-
-    // Inyectar controlador de tiempo virtual antes de cargar cualquier script
-    await page.evaluateOnNewDocument(() => {
-      let virtualTime = 0;
-      window.__virtualTime = 0;
-
-      // Mock de performance.now y Date.now
-      const origPerfNow = window.performance.now.bind(window.performance);
-      window.performance.now = () => window.__virtualTime;
-      
-      const origDateNow = Date.now.bind(Date);
-      const startTime = origDateNow();
-      Date.now = () => startTime + window.__virtualTime;
-
-      // Soporte para callbacks en requestAnimationFrame
-      const rafCallbacks = new Set();
-      window.__rafCallbacks = rafCallbacks;
-      
-      window.requestAnimationFrame = (cb) => {
-        const id = Math.random();
-        rafCallbacks.add({ id, cb });
-        return id;
-      };
-
-      window.cancelAnimationFrame = (id) => {
-        for (const item of rafCallbacks) {
-          if (item.id === id) {
-            rafCallbacks.delete(item);
-            break;
-          }
-        }
-      };
-
-      window.__stepVirtualTime = (newTimeMs) => {
-        window.__virtualTime = newTimeMs;
-        
-        // Ejecutar callbacks de rAF pendientes
-        const toRun = Array.from(rafCallbacks);
-        rafCallbacks.clear();
-        for (const item of toRun) {
-          try {
-            item.cb(newTimeMs);
-          } catch (e) {
-            console.error("Error en rAF callback:", e);
-          }
-        }
-
-        // Controlar animaciones nativas CSS / Web Animations API
-        if (document.getAnimations) {
-          const animations = document.getAnimations({ subtree: true });
-          for (const anim of animations) {
-            try {
-              anim.pause();
-              anim.currentTime = newTimeMs;
-            } catch {}
-          }
-        }
-
-        // Si la animación tiene hook personalizado de seek
-        if (typeof window.__seekToTime === "function") {
-          try {
-            window.__seekToTime(newTimeMs);
-          } catch {}
-        }
-      };
-    });
-
-    // Cargar contenido HTML sin bloquearse por peticiones de red externas
     try {
-      await page.setContent(finalHtml, {
-        waitUntil: "domcontentloaded",
-        timeout: 10000,
-      });
-    } catch (err) {
-      console.warn("[Renderer] Aviso no bloqueante en setContent:", err.message);
+      page = await browser.newPage();
+    } catch {
+      // Si la instancia compartida falló, relanzar navegador limpio
+      sharedBrowser = null;
+      browser = await getSharedBrowser();
+      page = await browser.newPage();
     }
 
-    // Asegurar ejecución del reloj virtual si setContent no ejecutó scripts inline
+    page.setDefaultNavigationTimeout(8000);
+    page.setDefaultTimeout(8000);
+
+    await page.setViewport({
+      width: layoutWidth,
+      height: layoutHeight,
+      deviceScaleFactor: scaleFactor,
+    });
+
+    await page.evaluateOnNewDocument(VIRTUAL_CLOCK_SCRIPT);
+
+    // Cargar el HTML esperando recursos rápidos (hasta 2.5s máximo) sin fallar si un CDN externo tarda
+    await Promise.race([
+      page.setContent(finalHtml, { waitUntil: "load" }).catch(() => {}),
+      new Promise((r) => setTimeout(r, 2500)),
+    ]);
+
+    // Garantizar que el reloj virtual esté inicializado
     await page.evaluate(VIRTUAL_CLOCK_SCRIPT).catch(() => {});
 
-    // Esperar fuentes con límite de 1 segundo para no congelar el proceso
-    try {
-      await Promise.race([
-        page.evaluate(() => document.fonts?.ready),
-        new Promise((r) => setTimeout(r, 1000)),
-      ]);
-    } catch {}
+    // Esperar fuentes listas (máximo 600ms)
+    await Promise.race([
+      page.evaluate(() => document.fonts?.ready).catch(() => {}),
+      new Promise((r) => setTimeout(r, 600)),
+    ]);
 
-    // Pequeña espera para estabilización de estilos
-    await new Promise((r) => setTimeout(r, 150));
+    const cdp = await page.createCDPSession();
 
-    // 2. Iniciar proceso FFmpeg recibiendo imágenes por pipe (stdin)
-    const ffmpegArgs = [
-      "-y",
-      "-f", "image2pipe",
-      "-vcodec", "mjpeg",
-      "-r", String(fps),
-      "-i", "-",
-      "-c:v", "libx264",
-      "-preset", "ultrafast",
-      "-crf", "24",
-      "-pix_fmt", "yuv420p",
-      "-movflags", "+faststart",
-      outputPath,
-    ];
-
-    const ffmpegProcess = spawn(FFMPEG_PATH, ffmpegArgs);
-    ffmpegProcess.stdin.on("error", (err) => {
-      console.warn("[FFmpeg stdin error]:", err.message);
+    // Capturar Frame 0 (calienta el compositor y caché de capas Skia)
+    await page.evaluate(() => {
+      if (typeof window.__stepVirtualTime === "function") {
+        window.__stepVirtualTime(0);
+      }
     });
-
-    let ffmpegErrorLog = "";
-    ffmpegProcess.stderr.on("data", (chunk) => {
-      ffmpegErrorLog += chunk.toString();
+    const firstShot = await cdp.send("Page.captureScreenshot", {
+      format: "jpeg",
+      quality: 80,
+      optimizeForSpeed: true,
     });
+    const firstFrameBuffer = Buffer.from(firstShot.data, "base64");
+    frameBuffers.push(firstFrameBuffer);
 
-    const ffmpegPromise = new Promise((resolve, reject) => {
-      ffmpegProcess.on("close", (code) => {
-        if (code === 0) {
-          resolve(true);
-        } else {
-          reject(new Error(`FFmpeg finalizó con código de error ${code}: ${ffmpegErrorLog.slice(-500)}`));
-        }
-      });
-      ffmpegProcess.on("error", (err) => {
-        reject(new Error(`Fallo al ejecutar FFmpeg: ${err.message}`));
-      });
+    // Medir tiempo real de captura en Frame 1 (ya con compositor caliente)
+    const tFrame1 = Date.now();
+    const probeMs = Math.min(100, safeDuration * 1000 * 0.02);
+    await page.evaluate((timeMs) => {
+      if (typeof window.__stepVirtualTime === "function") {
+        window.__stepVirtualTime(timeMs);
+      }
+    }, probeMs);
+    const secondShot = await cdp.send("Page.captureScreenshot", {
+      format: "jpeg",
+      quality: 80,
+      optimizeForSpeed: true,
     });
+    const secondFrameBuffer = Buffer.from(secondShot.data, "base64");
+    const warmFrameMs = Math.max(12, Date.now() - tFrame1);
 
-    // 3. Capturar fotograma a fotograma y escribirlos en FFmpeg stdin
-    for (let frameIndex = 0; frameIndex < totalFrames; frameIndex++) {
-      const currentMs = frameIndex * frameIntervalMs;
+    // Presupuesto objetivo de captura de 7.5 segundos para garantizar velocidad y fluidez
+    const captureBudgetMs = 7500;
+    const maxAffordableFrames = Math.floor(captureBudgetMs / warmFrameMs);
+    targetFrames = Math.min(
+      targetFrames,
+      Math.max(36, Math.min(150, maxAffordableFrames))
+    );
 
-      // Avanzar el reloj virtual
+    console.log(
+      `[Renderer] Calibración CPU: frame caliente en ${warmFrameMs}ms -> capturando ${targetFrames} fotogramas para ${safeDuration}s`
+    );
+
+    frameBuffers.push(secondFrameBuffer);
+    const loopStartTime = Date.now();
+    const totalDurationMs = safeDuration * 1000;
+
+    for (let i = 2; i < targetFrames; i++) {
+      const elapsedLoopMs = Date.now() - loopStartTime;
+
+      // Si el servidor en la nube sufre throttling severo de CPU (>8s), sub-muestreamos para terminar a tiempo
+      if (elapsedLoopMs > 8000 && i < targetFrames - 1 && i % 2 === 1) {
+        frameBuffers.push(frameBuffers[frameBuffers.length - 1]);
+        continue;
+      }
+
+      const currentMs = (i / Math.max(1, targetFrames - 1)) * totalDurationMs;
+
       await page.evaluate((timeMs) => {
         if (typeof window.__stepVirtualTime === "function") {
           window.__stepVirtualTime(timeMs);
-        } else if (document.getAnimations) {
-          const animations = document.getAnimations({ subtree: true });
-          for (const anim of animations) {
-            try {
-              anim.pause();
-              anim.currentTime = timeMs;
-            } catch {}
-          }
         }
       }, currentMs);
 
-      // Tomar captura JPEG en buffer (ultra-rápido y bajo consumo de memoria)
-      const screenshotBuffer = await page.screenshot({
-        type: "jpeg",
-        quality: 80,
+      const shot = await cdp.send("Page.captureScreenshot", {
+        format: "jpeg",
+        quality: 78,
         optimizeForSpeed: true,
       });
 
-      // Escribir en stdin de FFmpeg con control de contrapresión (backpressure)
-      if (!ffmpegProcess.stdin.write(screenshotBuffer)) {
-        await new Promise((resolve) => ffmpegProcess.stdin.once("drain", resolve));
-      }
+      frameBuffers.push(Buffer.from(shot.data, "base64"));
 
-      if (onProgress && (frameIndex % 15 === 0 || frameIndex === totalFrames - 1)) {
-        const percent = Math.round(((frameIndex + 1) / totalFrames) * 100);
+      if (onProgress && (i % 15 === 0 || i === targetFrames - 1)) {
+        const percent = Math.round(((i + 1) / targetFrames) * 100);
         onProgress({
-          frame: frameIndex + 1,
-          totalFrames,
+          frame: i + 1,
+          totalFrames: targetFrames,
           percent,
           currentTimeSeconds: (currentMs / 1000).toFixed(1),
         });
       }
     }
 
-    // Finalizar flujo stdin hacia FFmpeg
-    ffmpegProcess.stdin.end();
-
-    // Esperar a que FFmpeg termine de empaquetar el MP4
-    await ffmpegPromise;
-
-    console.log(`[Renderer] ¡Video generado con éxito!: ${outputPath}`);
-    return {
-      success: true,
-      outputPath,
-      duration,
-      fps,
-      totalFrames,
-    };
+    await cdp.detach().catch(() => {});
   } finally {
-    await browser.close().catch(() => {});
+    // Cerrar la página ANTES de lanzar FFmpeg para liberar memoria RAM en contenedores de 512MB
+    if (page) {
+      await page.close().catch(() => {});
+    }
   }
+
+  // Calcular el framerate exacto para que el archivo MP4 dure exactamente `safeDuration` segundos
+  const effectiveCaptureFps = (frameBuffers.length / safeDuration).toFixed(4);
+
+  const ffmpegArgs = [
+    "-y",
+    "-f", "image2pipe",
+    "-vcodec", "mjpeg",
+    "-framerate", String(effectiveCaptureFps),
+    "-i", "-",
+    "-r", "24",
+    "-c:v", "libx264",
+    "-preset", "ultrafast",
+    "-crf", "23",
+    "-threads", "2",
+    "-pix_fmt", "yuv420p",
+    "-vf", "scale=trunc(iw/2)*2:trunc(ih/2)*2",
+    "-movflags", "+faststart",
+    outputPath,
+  ];
+
+  const ffmpegProcess = spawn(FFMPEG_PATH, ffmpegArgs);
+  ffmpegProcess.stdin.on("error", (err) => {
+    console.warn("[FFmpeg stdin warning]:", err.message);
+  });
+
+  let ffmpegErrorLog = "";
+  ffmpegProcess.stderr.on("data", (chunk) => {
+    ffmpegErrorLog += chunk.toString();
+  });
+
+  const ffmpegPromise = new Promise((resolve, reject) => {
+    ffmpegProcess.on("close", (code) => {
+      if (code === 0) {
+        resolve(true);
+      } else {
+        reject(
+          new Error(`FFmpeg finalizó con código ${code}: ${ffmpegErrorLog.slice(-400)}`)
+        );
+      }
+    });
+    ffmpegProcess.on("error", (err) => {
+      reject(new Error(`Fallo al ejecutar FFmpeg (${FFMPEG_PATH}): ${err.message}`));
+    });
+  });
+
+  for (const buf of frameBuffers) {
+    if (!ffmpegProcess.stdin.write(buf)) {
+      await new Promise((resolve) => ffmpegProcess.stdin.once("drain", resolve));
+    }
+  }
+
+  ffmpegProcess.stdin.end();
+  await ffmpegPromise;
+
+  console.log(`[Renderer] ¡Video MP4 generado con éxito!: ${outputPath} (${frameBuffers.length} frames)`);
+  return {
+    success: true,
+    outputPath,
+    duration: safeDuration,
+    fps: Number(effectiveCaptureFps),
+    totalFrames: frameBuffers.length,
+  };
 }

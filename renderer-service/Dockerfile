@@ -1,4 +1,4 @@
-# Dockerfile optimizado para ZYRVAE Video Renderer en Render.com y Railway
+# Dockerfile optimizado para ZYRVAE Video Renderer v2.0 en Render.com y Railway
 FROM node:20-bookworm-slim
 
 # Instalar Chromium, FFmpeg y fuentes para renderizado nítido de tipografías
@@ -30,5 +30,5 @@ COPY . .
 # Exponer el puerto
 EXPOSE 8080
 
-# Iniciar el microservicio con límite de memoria adaptado a la capa gratuita
-CMD ["node", "--max-old-space-size=256", "server.js"]
+# Iniciar el microservicio con límite de memoria optimizado para contenedor de 512MB
+CMD ["node", "--max-old-space-size=320", "server.js"]

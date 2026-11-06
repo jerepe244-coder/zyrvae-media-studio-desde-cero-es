@@ -4,40 +4,50 @@ import path from "node:path";
 import fs from "node:fs";
 import os from "node:os";
 import crypto from "node:crypto";
-import { renderHtmlToMp4 } from "./engine.js";
+import { renderHtmlToMp4, warmUpBrowser } from "./engine.js";
 import { generateCommercialHtml } from "./templates/commercial.js";
 
 const app = express();
 const PORT = process.env.PORT || 8080;
 
-// Middleware de CORS abierto para permitir peticiones desde Vercel o el frontend
+// Cola secuencial para evitar que múltiples peticiones simultáneas saturen los 512MB de RAM
+let renderQueue = Promise.resolve();
+function runExclusiveRender(taskFn) {
+  const next = renderQueue.then(taskFn, taskFn);
+  renderQueue = next.catch(() => {});
+  return next;
+}
+
+// Middleware de CORS abierto con cabeceras expuestas para llamadas directas desde el navegador
 app.use(
   cors({
     origin: "*",
     methods: ["GET", "POST", "OPTIONS"],
-    allowedHeaders: ["Content-Type", "Authorization"],
+    allowedHeaders: ["Content-Type", "Authorization", "Accept"],
+    exposedHeaders: ["Content-Disposition", "X-Render-Time-Seconds", "X-Engine", "X-Title"],
   })
 );
 
-// Soporte para cuerpos JSON grandes (necesario para HTML con imágenes inline / SVGs)
 app.use(express.json({ limit: "50mb" }));
 app.use(express.urlencoded({ extended: true, limit: "50mb" }));
 
-// Endpoint de comprobación de salud para Render.com y Railway
+// Endpoint de comprobación de salud y precalentamiento del navegador
 app.get("/health", (req, res) => {
+  warmUpBrowser();
   res.json({
     status: "ok",
     service: "ZYRVAE Media Studio Video Renderer",
-    version: "1.0.0",
-    engine: "Puppeteer Headless + FFmpeg",
+    version: "2.0.0",
+    engine: "Puppeteer Warm Headless + FFmpeg UltraFast",
     uptimeSeconds: Math.floor(process.uptime()),
     timestamp: new Date().toISOString(),
   });
 });
 
 app.get("/", (req, res) => {
+  warmUpBrowser();
   res.json({
-    message: "ZYRVAE Media Studio - Motor de Renderizado HTML a MP4 Activo",
+    message: "ZYRVAE Media Studio - Motor de Renderizado HTML a MP4 Activo (v2.0)",
     endpoints: {
       health: "GET /health",
       render: "POST /render",
@@ -55,8 +65,8 @@ app.post("/render", async (req, res) => {
       html,
       html_code,
       title = "Comercial ZYRVAE",
-      duration = 10,
-      fps = 30,
+      duration = 15,
+      fps = 24,
       width = 1080,
       height = 1920,
       download = true,
@@ -65,19 +75,20 @@ app.post("/render", async (req, res) => {
       accentColor,
     } = req.body || {};
 
-    const safeDuration = Math.min(Math.max(Number(duration) || 10, 1), 120);
-    const safeFps = Math.min(Math.max(Number(fps) || 30, 15), 60);
+    const safeDuration = Math.min(Math.max(Number(duration) || 15, 1), 120);
+    const safeFps = Math.min(Math.max(Number(fps) || 24, 10), 60);
     const safeWidth = Math.min(Math.max(Number(width) || 1080, 200), 3840);
     const safeHeight = Math.min(Math.max(Number(height) || 1920, 200), 3840);
 
-    let rawHtml = (html || html_code || "").trim();
+    let rawHtml = String(html || html_code || "").trim();
 
-    // Si no se proveyó código HTML crudo pero se pasaron propiedades de comercial o plantilla
     if (!rawHtml && (props || mode === "remotion" || mode === "commercial" || title)) {
       const mergedProps = {
         title: title || props?.title || "Comercial ZYRVAE",
         subtitle: props?.subtitle || "Imprenta de Video Automatizada",
-        description: props?.description || "Diseño premium de alta conversión para anuncios 9:16 Ultra HD.",
+        description:
+          props?.description ||
+          "Diseño premium de alta conversión para anuncios 9:16 Ultra HD.",
         brandName: props?.brandName || "ZYRVAE MEDIA STUDIO",
         accentColor: accentColor || props?.accentColor || "#6366f1",
         badgeText: props?.badgeText || "Comercial ZYRVAE",
@@ -92,32 +103,39 @@ app.post("/render", async (req, res) => {
     if (!rawHtml) {
       return res.status(400).json({
         error: "Faltan parámetros",
-        message: "Debes enviar el código HTML en 'html' o las propiedades del video en 'props'.",
+        message: "Debes enviar el código HTML en 'html'.",
       });
     }
 
-    const safeTitle = String(title)
-      .replace(/[^a-zA-Z0-9_\-\s]/g, "")
-      .trim()
-      .replace(/\s+/g, "_") || "Comercial_ZYRVAE";
+    const safeTitle =
+      String(title)
+        .replace(/[^a-zA-Z0-9_\-\s]/g, "")
+        .trim()
+        .replace(/\s+/g, "_") || "Comercial_ZYRVAE";
 
     const uniqueId = crypto.randomUUID();
     const tempDir = os.tmpdir();
     tempFilePath = path.join(tempDir, `zyrvae_${uniqueId}.mp4`);
 
-    console.log(`[Render Request] ID: ${uniqueId} | Título: ${safeTitle} | Duración: ${safeDuration}s | ${safeWidth}x${safeHeight}`);
+    console.log(
+      `[Render Request] ID: ${uniqueId} | Título: ${safeTitle} | Duración: ${safeDuration}s`
+    );
 
-    await renderHtmlToMp4({
-      html: rawHtml,
-      duration: safeDuration,
-      fps: safeFps,
-      width: safeWidth,
-      height: safeHeight,
-      outputPath: tempFilePath,
-      onProgress: (p) => {
-        console.log(`[ID ${uniqueId}] Progreso: ${p.percent}% (${p.frame}/${p.totalFrames} frames)`);
-      },
-    });
+    await runExclusiveRender(() =>
+      renderHtmlToMp4({
+        html: rawHtml,
+        duration: safeDuration,
+        fps: safeFps,
+        width: safeWidth,
+        height: safeHeight,
+        outputPath: tempFilePath,
+        onProgress: (p) => {
+          console.log(
+            `[ID ${uniqueId}] Progreso: ${p.percent}% (${p.frame}/${p.totalFrames} frames)`
+          );
+        },
+      })
+    );
 
     if (!fs.existsSync(tempFilePath)) {
       throw new Error("El archivo de video no se generó correctamente en el servidor.");
@@ -125,22 +143,23 @@ app.post("/render", async (req, res) => {
 
     const fileStat = fs.statSync(tempFilePath);
     const elapsedSeconds = ((Date.now() - startTime) / 1000).toFixed(1);
-    console.log(`[Render Completado] Tamaño: ${(fileStat.size / (1024 * 1024)).toFixed(2)} MB en ${elapsedSeconds}s`);
+    console.log(
+      `[Render Completado] Tamaño: ${(fileStat.size / (1024 * 1024)).toFixed(2)} MB en ${elapsedSeconds}s`
+    );
 
     const fileName = `${safeTitle}.mp4`;
 
-    // Si download es true (o por defecto), enviamos el archivo MP4 como stream descargable directamente
     if (download) {
       res.setHeader("Content-Type", "video/mp4");
       res.setHeader("Content-Length", fileStat.size);
       res.setHeader("Content-Disposition", `attachment; filename="${fileName}"`);
       res.setHeader("X-Render-Time-Seconds", elapsedSeconds);
+      res.setHeader("X-Engine", "Dedicated-Render-Cloud-v2");
 
       const fileStream = fs.createReadStream(tempFilePath);
       fileStream.pipe(res);
 
       fileStream.on("end", () => {
-        // Limpieza del archivo temporal tras finalizar la descarga
         fs.unlink(tempFilePath, () => {});
       });
 
@@ -149,7 +168,6 @@ app.post("/render", async (req, res) => {
         fs.unlink(tempFilePath, () => {});
       });
     } else {
-      // Modo Base64 o respuesta JSON informativa
       const base64Data = fs.readFileSync(tempFilePath, { encoding: "base64" });
       fs.unlink(tempFilePath, () => {});
 
@@ -171,15 +189,16 @@ app.post("/render", async (req, res) => {
 
     return res.status(500).json({
       error: "Error durante el renderizado del video",
-      details: error.message || String(error),
+      details: error instanceof Error ? error.message : String(error),
     });
   }
 });
 
 app.listen(PORT, "0.0.0.0", () => {
   console.log(`=======================================================`);
-  console.log(`🚀 ZYRVAE Video Renderer Service activo en puerto ${PORT}`);
+  console.log(`🚀 ZYRVAE Video Renderer Service v2.0 activo en puerto ${PORT}`);
   console.log(`📡 URL Health: http://localhost:${PORT}/health`);
   console.log(`🎬 URL Render: http://localhost:${PORT}/render`);
   console.log(`=======================================================`);
+  warmUpBrowser();
 });
