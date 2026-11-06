@@ -171,8 +171,9 @@ const VIRTUAL_CLOCK_SCRIPT = `
  * Prepara y normaliza cualquier código HTML pegado por el usuario para garantizar
  * resolución exacta sin desbordes, con modo de video limpio para publicación.
  */
-export function sanitizeHtml(rawHtml, width = 1080, height = 1920, cleanVideo = true) {
+export function sanitizeHtml(rawHtml, width = 1080, height = 1920, cleanVideo = true, duration = 15) {
   let html = String(rawHtml || "").trim();
+  const safeDuration = Math.min(Math.max(Number(duration) || 15, 1), 120);
 
   const cleanVideoRules = cleanVideo
     ? `
@@ -212,7 +213,7 @@ export function sanitizeHtml(rawHtml, width = 1080, height = 1920, cleanVideo = 
       100% { transform: scale(1.08) translateY(0); }
     }
     img, .bg, .hero, .card, .main, [class*="card"], [class*="hero"], [class*="poster"], [class*="banner"] {
-      animation: __zyrvae_cinematic_motion 15s ease-in-out infinite alternate !important;
+      animation: __zyrvae_cinematic_motion ${safeDuration}s ease-in-out infinite alternate !important;
     }
     `
     : "";
@@ -360,7 +361,7 @@ export async function renderHtmlToMp4({
 
   // Escala de rasterizado 0.5 (540x960 sobre layout exacto 1080x1920) para máxima velocidad y bajo uso de RAM
   const scaleFactor = layoutWidth > 720 ? 0.5 : 1;
-  const finalHtml = sanitizeHtml(html, layoutWidth, layoutHeight, cleanVideo !== false);
+  const finalHtml = sanitizeHtml(html, layoutWidth, layoutHeight, cleanVideo !== false, safeDuration);
 
   console.log(
     `[Renderer] Renderizando: layout ${layoutWidth}x${layoutHeight} (scale ${scaleFactor}), duración: ${safeDuration}s, modoLimpio: ${cleanVideo}`

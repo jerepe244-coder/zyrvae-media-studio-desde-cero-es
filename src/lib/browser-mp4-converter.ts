@@ -360,7 +360,7 @@ export async function renderHtmlToMp4InBrowser({
           100% { transform: scale(1.08) translateY(0); }
         }
         img, .bg, .hero, .card, .main, [class*="card"], [class*="hero"], [class*="poster"], [class*="banner"] {
-          animation: __zyrvae_cinematic_motion 15s ease-in-out infinite alternate !important;
+          animation: __zyrvae_cinematic_motion ${safeDuration}s ease-in-out infinite alternate !important;
         }`
       : "";
 

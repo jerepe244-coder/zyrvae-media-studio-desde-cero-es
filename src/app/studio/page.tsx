@@ -179,35 +179,68 @@ const createFlashSaleHtml = (seconds: number = 15) => `<!DOCTYPE html>
 </body>
 </html>`;
 
-// Prompt Maestro optimizado para IAs (ChatGPT, Claude, Gemini, DeepSeek)
-// Instruye a la IA para crear piezas publicitarias con animaciones continuas automáticas
-// 100% compatibles con la conversión a video MP4 fluido (sin reproductores ni fotos estáticas)
-const MASTER_AI_PROMPT = `Actúa como un diseñador de Motion Graphics y desarrollador frontend experto.
-Genera un anuncio publicitario vertical (9:16) en un ÚNICO archivo HTML con CSS integrado, listo para ser convertido directamente a video MP4 fluido en ZYRVAE Media Studio.
+// Generador de Reglas Técnicas de Renderizado para IAs (ChatGPT, Claude, Gemini, DeepSeek)
+// Define las especificaciones técnicas indispensables para que el motor de video pueda compilar
+// el código a MP4 con movimiento fluido, sin imponer el contenido publicitario ni la creatividad del usuario.
+export const getTechnicalAiPrompt = (
+  durationSec: number = 15,
+  aspectRatio: string = "9:16",
+  width: number = 1080,
+  height: number = 1920
+): string => {
+  const durationLabel =
+    durationSec === 60
+      ? "60 segundos (1 minuto)"
+      : durationSec > 60
+      ? `${durationSec} segundos (~${(durationSec / 60).toFixed(1)} min)`
+      : `${durationSec} segundos`;
 
-REGLAS TÉCNICAS OBLIGATORIAS:
-1. FORMATO Y RESOLUCIÓN:
-   - 1080px de ancho por 1920px de alto (9:16 vertical nativo para TikTok, Reels y Shorts).
-   - Fondo oscuro profesional (#09090b) con overflow: hidden.
+  return `Actúa como un desarrollador frontend experto en renderizado automatizado de video web.
+Genera un ÚNICO archivo HTML autónomo (con CSS y JavaScript embebidos), diseñado específicamente para ser convertido directamente a video MP4 fluido en ZYRVAE Media Studio.
 
-2. CERO BOTONES NI REPRODUCTORES:
-   - NO generes botones de Play/Pausa, barras de reproducción, controles ni paneles laterales.
-   - NO uses etiquetas <video src="..."> externas ni enlaces externos pesados. Todo debe ser código HTML y CSS puro (formas vectoriales, tipografías grandes, gradientes y tarjetas estilizadas).
+REGLAS TÉCNICAS OBLIGATORIAS PARA EL RENDERIZADO:
 
-3. ANIMACIONES CONTINUAS AUTOMÁTICAS (CSS @keyframes):
-   - Todas las animaciones deben arrancar solas al segundo 0 (animation: ... forwards o infinite).
-   - Nada debe esperar clics ni interacción del usuario para que el video tenga movimiento constante.
+1. ARCHIVO 100% AUTÓNOMO Y AUTOCONTENIDO:
+   - Todo el CSS debe estar dentro de la etiqueta <style> y cualquier script dentro de <script>.
+   - No enlaces archivos locales ni hojas de estilo externas relativas. Todo debe estar embebido en el mismo archivo.
 
-4. CRONOLOGÍA DE ESCENAS (DURACIÓN TOTAL 15 SEGUNDOS):
-   - Segundos 0 a 4: Entrada dinámica con logo/badge superior y gancho/titular principal con efecto de escala o fade-in.
-   - Segundos 4 a 9: Revelación de beneficios o características clave con tarjetas luminosas y números destacados.
-   - Segundos 9 a 15: Llamado a la acción (CTA) con botón brillante y una barra de progreso inferior que se llene de 0% a 100% en 15s.
+2. CERO INTERACTIVIDAD HUMANA NI CONTROLES DE REPRODUCTOR:
+   - El renderizador captura fotogramas de forma automática y desatendida; no hay interacción de un usuario.
+   - NO incluyas controles de video, botones de Play/Pause, barras de reproducción web, paneles laterales ni eventos que esperen "click" o "hover".
+   - NO uses etiquetas <video> externas que dependan de reproducción manual o de streaming externo inestable.
 
-5. ESTÉTICA VISUAL:
-   - Tipografía grande e impactante, degradados modernos (gradientes neón púrpura/índigo/rosa) y orbes desenfocados flotando de fondo.
+3. ANIMACIONES CONTINUAS Y AUTOMÁTICAS (CSS @keyframes):
+   - Todo el movimiento debe comenzar automáticamente en el segundo 0 (animation-delay: 0s o inmediato).
+   - Usa animaciones CSS fluidas (@keyframes) priorizando propiedades aceleradas por GPU (transform: translate, scale, rotate y opacity).
+   - El dinamismo visual debe mantenerse activo de principio a fin sin quedarse congelado como una imagen fija.
 
-PRODUCTO / TEMA DEL ANUNCIO:
-[ESCRIBE AQUÍ TU PRODUCTO, SERVICIO O MENSAJE]`;
+4. SINCRONIZACIÓN CON LA DURACIÓN DEL VIDEO:
+   - Duración total del video configurada: ${durationLabel}.
+   - Configura las animaciones, transiciones o bucles para que se sincronicen armónicamente a lo largo de estos ${durationSec} segundos (sin cortarse antes de tiempo ni frenarse).
+
+5. FORMATO, RESOLUCIÓN Y ENCUADRE:
+   - Proporción seleccionada: ${aspectRatio} (${width}px de ancho por ${height}px de alto).
+   - Aplica en el CSS base:
+     html, body {
+       width: 100%;
+       height: 100%;
+       margin: 0;
+       padding: 0;
+       overflow: hidden;
+       box-sizing: border-box;
+     }
+   - Esto evita barras de desplazamiento (scroll) o desbordes en el video MP4 final.
+
+============================================================
+INFORMACIÓN CREATIVA DEL ANUNCIO (TOTALMENTE A TU ELECCIÓN):
+Pega o describe aquí lo que deseas que contenga tu anuncio:
+- Tu producto o servicio: [DESCRIBE AQUÍ]
+- Tu mensaje o textos clave: [DESCRIBE AQUÍ]
+- Tu estilo visual, colores o temática: [DESCRIBE AQUÍ]
+============================================================`;
+};
+
+const MASTER_AI_PROMPT = getTechnicalAiPrompt(15, "9:16", 1080, 1920);
 
 const DURATION_PRESETS = [
   { seconds: 15, label: "15s", desc: "Reel / Story Rápido", badge: "Más Rápido" },
@@ -253,9 +286,19 @@ export default function StudioPage() {
   const [showPromptModal, setShowPromptModal] = React.useState(false);
   const [copiedPrompt, setCopiedPrompt] = React.useState(false);
 
+  // Prompt técnico sincronizado con la duración y dimensiones seleccionadas actualmente
+  const dynamicAiPrompt = React.useMemo(() => {
+    return getTechnicalAiPrompt(
+      durationSeconds,
+      aspectRatio,
+      dimensions.width,
+      dimensions.height
+    );
+  }, [durationSeconds, aspectRatio, dimensions.width, dimensions.height]);
+
   const handleCopyPrompt = async () => {
     try {
-      await navigator.clipboard.writeText(MASTER_AI_PROMPT);
+      await navigator.clipboard.writeText(dynamicAiPrompt);
       setCopiedPrompt(true);
       setTimeout(() => setCopiedPrompt(false), 2000);
     } catch (err) {
@@ -297,7 +340,7 @@ export default function StudioPage() {
           100% { transform: scale(1.08) translateY(0); }
         }
         img, .bg, .hero, .card, .main, [class*="card"], [class*="hero"], [class*="poster"], [class*="banner"] {
-          animation: __zyrvae_cinematic_motion 15s ease-in-out infinite alternate !important;
+          animation: __zyrvae_cinematic_motion ${durationSeconds}s ease-in-out infinite alternate !important;
         }`
       : "";
 
@@ -327,7 +370,7 @@ export default function StudioPage() {
       return debouncedHtml.replace("<head>", `<head>${cleanStyle}`);
     }
     return `${cleanStyle}${debouncedHtml}`;
-  }, [debouncedHtml, cleanVideoMode]);
+  }, [debouncedHtml, cleanVideoMode, durationSeconds]);
 
   // Debounce del HTML para la vista previa: evita recrear el iframe en cada tecla o pegado grande
   React.useEffect(() => {
@@ -600,7 +643,7 @@ export default function StudioPage() {
               className="h-8 text-xs border-indigo-500/50 bg-indigo-500/15 hover:bg-indigo-500/25 text-indigo-300 font-semibold gap-1.5 shadow-sm shadow-indigo-950"
             >
               <Lightbulb className="h-3.5 w-3.5 text-amber-400" />
-              Prompt para IA (Videos con Movimiento)
+              Reglas Técnicas para IA ({durationSeconds === 60 ? "1 min" : `${durationSeconds}s`})
             </Button>
             <Button
               type="button"
@@ -772,11 +815,12 @@ export default function StudioPage() {
                       <AlertCircle className="h-4 w-4 shrink-0 text-amber-400 mt-0.5" />
                       <div>
                         <p className="font-semibold text-amber-300">
-                          ¿Por qué el video se exporta como una imagen fija?
+                          Aviso: Este código no contiene animaciones automáticas (@keyframes)
                         </p>
                         <p className="text-zinc-300 mt-0.5 text-[11px] leading-relaxed">
-                          Este código no contiene animaciones continuas (<code className="text-amber-300 font-mono">@keyframes</code>).
-                          Los archivos MP4 capturan los cambios en el tiempo; si el código solo muestra una imagen o espera clics, el video saldrá congelado.
+                          Para que el video MP4 tenga movimiento continuo durante los{" "}
+                          {durationSeconds === 60 ? "60 segundos" : `${durationSeconds} segundos`} sin
+                          quedar congelado, debe incluir animaciones CSS automáticas.
                         </p>
                       </div>
                     </div>
@@ -787,7 +831,7 @@ export default function StudioPage() {
                       onClick={() => setShowPromptModal(true)}
                       className="shrink-0 h-7 text-[11px] border-amber-500/40 text-amber-300 hover:bg-amber-500/20"
                     >
-                      Ver Prompt para IA
+                      Ver Reglas Técnicas
                     </Button>
                   </div>
                 )}
@@ -1196,7 +1240,7 @@ export default function StudioPage() {
         </DialogContent>
       </Dialog>
 
-      {/* Modal: Prompt Maestro para IA (Videos con Movimiento) */}
+      {/* Modal: Reglas Técnicas de Renderizado para IA */}
       <Dialog open={showPromptModal} onOpenChange={setShowPromptModal}>
         <DialogContent className="w-[calc(100vw-2rem)] sm:max-w-xl bg-zinc-950 border-zinc-800 text-zinc-100 rounded-2xl p-5 sm:p-6 max-h-[90vh] overflow-y-auto">
           <DialogHeader>
@@ -1206,10 +1250,10 @@ export default function StudioPage() {
               </span>
               <div>
                 <DialogTitle className="text-base sm:text-lg font-bold text-white">
-                  Prompt Maestro para IAs (Videos 100% Animados)
+                  Reglas Técnicas para IAs ({durationSeconds === 60 ? "1 min (60s)" : `${durationSeconds}s`} · {aspectRatio})
                 </DialogTitle>
                 <DialogDescription className="text-zinc-400 text-xs">
-                  Copia y pega este prompt en ChatGPT, Claude o tu IA favorita para generar código con movimiento fluido.
+                  Instrucciones técnicas indispensables para que ChatGPT, Claude o tu IA generen código que se renderice a video MP4 fluido.
                 </DialogDescription>
               </div>
             </div>
@@ -1219,21 +1263,43 @@ export default function StudioPage() {
             <div className="p-3.5 rounded-xl bg-indigo-950/30 border border-indigo-500/30 text-xs text-zinc-300 space-y-1.5">
               <p className="font-semibold text-indigo-300 flex items-center gap-1.5">
                 <HelpCircle className="h-4 w-4 text-indigo-400" />
-                ¿Por qué los videos salían como fotos congeladas?
+                Libertad creativa + Precisión técnica
               </p>
               <p className="text-zinc-400 text-[11px] leading-relaxed">
-                Por defecto, las IAs intentan crear <strong className="text-zinc-200">reproductores web</strong> con botones de &quot;Play&quot; y fotos de fondo fijas.
-                Un archivo de video MP4 no puede recibir clics; necesita <strong className="text-indigo-300">animaciones CSS automáticas (@keyframes)</strong> que corran solas a lo largo de los 15 segundos. Este prompt le ordena a la IA exactamente cómo estructurarlo.
+                Este prompt <strong className="text-zinc-200">no te impone cómo debe ser tu anuncio</strong> (el guion, estética, temática y producto los decides tú libremente). Establece las <strong className="text-indigo-300">reglas técnicas de renderizado</strong> para que el motor de video pueda exportar un MP4 animado de <strong className="text-white">{durationSeconds === 60 ? "1 minuto (60s)" : `${durationSeconds} segundos`}</strong> sin controles de reproductor ni fotos fijas.
               </p>
+            </div>
+
+            {/* Selector rápido de duración dentro del modal */}
+            <div className="flex items-center justify-between p-2.5 rounded-xl bg-zinc-900/60 border border-zinc-800 text-xs">
+              <span className="text-zinc-400 font-medium">Sincronizado con duración:</span>
+              <div className="flex items-center gap-1.5">
+                {DURATION_PRESETS.map((preset) => (
+                  <button
+                    key={preset.seconds}
+                    type="button"
+                    onClick={() => handleChangeDuration(preset.seconds)}
+                    className={`px-2.5 py-1 rounded-lg text-xs font-semibold transition-all ${
+                      durationSeconds === preset.seconds
+                        ? "bg-indigo-600 text-white shadow-sm ring-1 ring-indigo-500/50"
+                        : "bg-zinc-800/80 text-zinc-400 hover:text-zinc-200"
+                    }`}
+                  >
+                    {preset.label}
+                  </button>
+                ))}
+              </div>
             </div>
 
             <div className="space-y-1.5">
               <div className="flex items-center justify-between text-xs">
-                <span className="text-zinc-400 font-medium">Prompt listo para copiar:</span>
-                <span className="text-[11px] text-zinc-500 font-mono">Formato 9:16 Vertical</span>
+                <span className="text-zinc-400 font-medium">Reglas listas para copiar a tu IA:</span>
+                <span className="text-[11px] text-zinc-500 font-mono">
+                  {aspectRatio} · {durationSeconds === 60 ? "1 min" : `${durationSeconds}s`}
+                </span>
               </div>
               <pre className="p-4 rounded-xl bg-black/90 border border-zinc-800 text-zinc-200 text-[11px] sm:text-xs font-mono whitespace-pre-wrap leading-relaxed max-h-60 overflow-y-auto select-all">
-                {MASTER_AI_PROMPT}
+                {dynamicAiPrompt}
               </pre>
             </div>
           </div>
@@ -1257,12 +1323,12 @@ export default function StudioPage() {
               {copiedPrompt ? (
                 <>
                   <Check className="h-4 w-4 text-emerald-300" />
-                  ¡Prompt Copiado!
+                  ¡Reglas Copiadas!
                 </>
               ) : (
                 <>
                   <Copy className="h-4 w-4" />
-                  Copiar Prompt al Portapapeles
+                  Copiar Reglas Técnicas
                 </>
               )}
             </Button>
