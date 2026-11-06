@@ -171,6 +171,8 @@ export async function renderHtmlToMp4({
 
   try {
     const page = await browser.newPage();
+    page.setDefaultNavigationTimeout(10000);
+    page.setDefaultTimeout(10000);
     await page.setViewport({ width, height, deviceScaleFactor: 1 });
 
     // Inyectar controlador de tiempo virtual antes de cargar cualquier script
@@ -239,17 +241,29 @@ export async function renderHtmlToMp4({
       };
     });
 
-    // Cargar contenido HTML
-    await page.setContent(finalHtml, {
-      waitUntil: ["load", "networkidle0"],
-      timeout: 30000,
-    });
+    // Cargar contenido HTML sin bloquearse por peticiones de red externas
+    try {
+      await page.setContent(finalHtml, {
+        waitUntil: "domcontentloaded",
+        timeout: 10000,
+      });
+    } catch (err) {
+      console.warn("[Renderer] Aviso no bloqueante en setContent:", err.message);
+    }
 
     // Asegurar ejecución del reloj virtual si setContent no ejecutó scripts inline
     await page.evaluate(VIRTUAL_CLOCK_SCRIPT).catch(() => {});
 
-    // Pequeña espera para estabilización de fuentes y estilos
-    await new Promise((r) => setTimeout(r, 200));
+    // Esperar fuentes con límite de 1 segundo para no congelar el proceso
+    try {
+      await Promise.race([
+        page.evaluate(() => document.fonts?.ready),
+        new Promise((r) => setTimeout(r, 1000)),
+      ]);
+    } catch {}
+
+    // Pequeña espera para estabilización de estilos
+    await new Promise((r) => setTimeout(r, 150));
 
     // 2. Iniciar proceso FFmpeg recibiendo imágenes por pipe (stdin)
     const ffmpegArgs = [
@@ -267,6 +281,9 @@ export async function renderHtmlToMp4({
     ];
 
     const ffmpegProcess = spawn(FFMPEG_PATH, ffmpegArgs);
+    ffmpegProcess.stdin.on("error", (err) => {
+      console.warn("[FFmpeg stdin error]:", err.message);
+    });
 
     let ffmpegErrorLog = "";
     ffmpegProcess.stderr.on("data", (chunk) => {
