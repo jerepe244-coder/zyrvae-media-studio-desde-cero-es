@@ -20,6 +20,8 @@ import {
   Clock,
   Code2,
   Zap,
+  HelpCircle,
+  Lightbulb,
 } from "lucide-react";
 
 import { Button } from "@/components/ui/button";
@@ -177,6 +179,36 @@ const createFlashSaleHtml = (seconds: number = 15) => `<!DOCTYPE html>
 </body>
 </html>`;
 
+// Prompt Maestro optimizado para IAs (ChatGPT, Claude, Gemini, DeepSeek)
+// Instruye a la IA para crear piezas publicitarias con animaciones continuas automáticas
+// 100% compatibles con la conversión a video MP4 fluido (sin reproductores ni fotos estáticas)
+const MASTER_AI_PROMPT = `Actúa como un diseñador de Motion Graphics y desarrollador frontend experto.
+Genera un anuncio publicitario vertical (9:16) en un ÚNICO archivo HTML con CSS integrado, listo para ser convertido directamente a video MP4 fluido en ZYRVAE Media Studio.
+
+REGLAS TÉCNICAS OBLIGATORIAS:
+1. FORMATO Y RESOLUCIÓN:
+   - 1080px de ancho por 1920px de alto (9:16 vertical nativo para TikTok, Reels y Shorts).
+   - Fondo oscuro profesional (#09090b) con overflow: hidden.
+
+2. CERO BOTONES NI REPRODUCTORES:
+   - NO generes botones de Play/Pausa, barras de reproducción, controles ni paneles laterales.
+   - NO uses etiquetas <video src="..."> externas ni enlaces externos pesados. Todo debe ser código HTML y CSS puro (formas vectoriales, tipografías grandes, gradientes y tarjetas estilizadas).
+
+3. ANIMACIONES CONTINUAS AUTOMÁTICAS (CSS @keyframes):
+   - Todas las animaciones deben arrancar solas al segundo 0 (animation: ... forwards o infinite).
+   - Nada debe esperar clics ni interacción del usuario para que el video tenga movimiento constante.
+
+4. CRONOLOGÍA DE ESCENAS (DURACIÓN TOTAL 15 SEGUNDOS):
+   - Segundos 0 a 4: Entrada dinámica con logo/badge superior y gancho/titular principal con efecto de escala o fade-in.
+   - Segundos 4 a 9: Revelación de beneficios o características clave con tarjetas luminosas y números destacados.
+   - Segundos 9 a 15: Llamado a la acción (CTA) con botón brillante y una barra de progreso inferior que se llene de 0% a 100% en 15s.
+
+5. ESTÉTICA VISUAL:
+   - Tipografía grande e impactante, degradados modernos (gradientes neón púrpura/índigo/rosa) y orbes desenfocados flotando de fondo.
+
+PRODUCTO / TEMA DEL ANUNCIO:
+[ESCRIBE AQUÍ TU PRODUCTO, SERVICIO O MENSAJE]`;
+
 const DURATION_PRESETS = [
   { seconds: 15, label: "15s", desc: "Reel / Story Rápido", badge: "Más Rápido" },
   { seconds: 30, label: "30s", desc: "Comercial Estándar" },
@@ -218,6 +250,24 @@ export default function StudioPage() {
     filename?: string;
   } | null>(null);
   const [showResultModal, setShowResultModal] = React.useState(false);
+  const [showPromptModal, setShowPromptModal] = React.useState(false);
+  const [copiedPrompt, setCopiedPrompt] = React.useState(false);
+
+  const handleCopyPrompt = async () => {
+    try {
+      await navigator.clipboard.writeText(MASTER_AI_PROMPT);
+      setCopiedPrompt(true);
+      setTimeout(() => setCopiedPrompt(false), 2000);
+    } catch (err) {
+      console.error("Error al copiar prompt:", err);
+    }
+  };
+
+  // Detector de animaciones CSS continuas en el código
+  const hasAnimations = React.useMemo(() => {
+    if (!debouncedHtml.trim()) return true;
+    return /@keyframes|animation\s*:|requestAnimationFrame/i.test(debouncedHtml);
+  }, [debouncedHtml]);
 
   // Referencia y escala para el iframe HTML responsivo
   const phoneContainerRef = React.useRef<HTMLDivElement>(null);
@@ -239,6 +289,18 @@ export default function StudioPage() {
   // HTML limpio para vista previa sin paneles interactivos
   const previewHtml = React.useMemo(() => {
     if (!cleanVideoMode) return debouncedHtml;
+    const hasKeyframes = /@keyframes/i.test(debouncedHtml);
+    const autoMotion = !hasKeyframes
+      ? `@keyframes __zyrvae_cinematic_motion {
+          0% { transform: scale(1) translateY(0); }
+          50% { transform: scale(1.04) translateY(-8px); }
+          100% { transform: scale(1.08) translateY(0); }
+        }
+        img, .bg, .hero, .card, .main, [class*="card"], [class*="hero"], [class*="poster"], [class*="banner"] {
+          animation: __zyrvae_cinematic_motion 15s ease-in-out infinite alternate !important;
+        }`
+      : "";
+
     const cleanStyle = `<style id="__zyrvae_clean_preview">
       .panel, #panel, .controls, #controls, .toolbar, #toolbar, .sidebar, #sidebar,
       .player-controls, .video-controls, .control-bar, .playback-bar,
@@ -259,6 +321,7 @@ export default function StudioPage() {
         object-fit: contain !important;
         margin: 0 auto !important;
       }
+      ${autoMotion}
     </style>`;
     if (debouncedHtml.includes("<head>")) {
       return debouncedHtml.replace("<head>", `<head>${cleanStyle}`);
@@ -527,8 +590,18 @@ export default function StudioPage() {
             </p>
           </div>
 
-          {/* Plantillas Rápidas de Código HTML */}
+          {/* Plantillas Rápidas de Código HTML y Asistente de Prompt */}
           <div className="flex items-center gap-1.5 flex-wrap">
+            <Button
+              type="button"
+              variant="outline"
+              size="sm"
+              onClick={() => setShowPromptModal(true)}
+              className="h-8 text-xs border-indigo-500/50 bg-indigo-500/15 hover:bg-indigo-500/25 text-indigo-300 font-semibold gap-1.5 shadow-sm shadow-indigo-950"
+            >
+              <Lightbulb className="h-3.5 w-3.5 text-amber-400" />
+              Prompt para IA (Videos con Movimiento)
+            </Button>
             <Button
               type="button"
               variant="outline"
@@ -691,6 +764,33 @@ export default function StudioPage() {
                   spellCheck={false}
                   className="w-full rounded-xl border border-zinc-800 bg-zinc-950/90 p-3 text-xs sm:text-[13px] font-mono text-zinc-200 placeholder:text-zinc-600 focus:outline-none focus:ring-1 focus:ring-indigo-500 focus:border-indigo-500 transition-all resize-y leading-relaxed"
                 />
+
+                {/* Detector de Movimiento y Animación */}
+                {!hasAnimations && debouncedHtml.trim() && (
+                  <div className="p-3 rounded-xl bg-amber-500/10 border border-amber-500/30 flex items-start justify-between gap-3 text-xs text-amber-200 mt-2">
+                    <div className="flex items-start gap-2">
+                      <AlertCircle className="h-4 w-4 shrink-0 text-amber-400 mt-0.5" />
+                      <div>
+                        <p className="font-semibold text-amber-300">
+                          ¿Por qué el video se exporta como una imagen fija?
+                        </p>
+                        <p className="text-zinc-300 mt-0.5 text-[11px] leading-relaxed">
+                          Este código no contiene animaciones continuas (<code className="text-amber-300 font-mono">@keyframes</code>).
+                          Los archivos MP4 capturan los cambios en el tiempo; si el código solo muestra una imagen o espera clics, el video saldrá congelado.
+                        </p>
+                      </div>
+                    </div>
+                    <Button
+                      type="button"
+                      size="sm"
+                      variant="outline"
+                      onClick={() => setShowPromptModal(true)}
+                      className="shrink-0 h-7 text-[11px] border-amber-500/40 text-amber-300 hover:bg-amber-500/20"
+                    >
+                      Ver Prompt para IA
+                    </Button>
+                  </div>
+                )}
               </div>
             </CardContent>
           </Card>
@@ -1092,6 +1192,80 @@ export default function StudioPage() {
                 Volver a Descargar MP4
               </Button>
             )}
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
+
+      {/* Modal: Prompt Maestro para IA (Videos con Movimiento) */}
+      <Dialog open={showPromptModal} onOpenChange={setShowPromptModal}>
+        <DialogContent className="w-[calc(100vw-2rem)] sm:max-w-xl bg-zinc-950 border-zinc-800 text-zinc-100 rounded-2xl p-5 sm:p-6 max-h-[90vh] overflow-y-auto">
+          <DialogHeader>
+            <div className="flex items-center gap-2.5 mb-1.5">
+              <span className="p-2.5 rounded-xl bg-indigo-500/15 text-indigo-400 border border-indigo-500/30">
+                <Lightbulb className="h-5 w-5 text-amber-400" />
+              </span>
+              <div>
+                <DialogTitle className="text-base sm:text-lg font-bold text-white">
+                  Prompt Maestro para IAs (Videos 100% Animados)
+                </DialogTitle>
+                <DialogDescription className="text-zinc-400 text-xs">
+                  Copia y pega este prompt en ChatGPT, Claude o tu IA favorita para generar código con movimiento fluido.
+                </DialogDescription>
+              </div>
+            </div>
+          </DialogHeader>
+
+          <div className="space-y-3.5 my-2">
+            <div className="p-3.5 rounded-xl bg-indigo-950/30 border border-indigo-500/30 text-xs text-zinc-300 space-y-1.5">
+              <p className="font-semibold text-indigo-300 flex items-center gap-1.5">
+                <HelpCircle className="h-4 w-4 text-indigo-400" />
+                ¿Por qué los videos salían como fotos congeladas?
+              </p>
+              <p className="text-zinc-400 text-[11px] leading-relaxed">
+                Por defecto, las IAs intentan crear <strong className="text-zinc-200">reproductores web</strong> con botones de &quot;Play&quot; y fotos de fondo fijas.
+                Un archivo de video MP4 no puede recibir clics; necesita <strong className="text-indigo-300">animaciones CSS automáticas (@keyframes)</strong> que corran solas a lo largo de los 15 segundos. Este prompt le ordena a la IA exactamente cómo estructurarlo.
+              </p>
+            </div>
+
+            <div className="space-y-1.5">
+              <div className="flex items-center justify-between text-xs">
+                <span className="text-zinc-400 font-medium">Prompt listo para copiar:</span>
+                <span className="text-[11px] text-zinc-500 font-mono">Formato 9:16 Vertical</span>
+              </div>
+              <pre className="p-4 rounded-xl bg-black/90 border border-zinc-800 text-zinc-200 text-[11px] sm:text-xs font-mono whitespace-pre-wrap leading-relaxed max-h-60 overflow-y-auto select-all">
+                {MASTER_AI_PROMPT}
+              </pre>
+            </div>
+          </div>
+
+          <DialogFooter className="flex-row items-center justify-between gap-2 pt-2 border-t border-zinc-800/80">
+            <Button
+              type="button"
+              variant="outline"
+              size="sm"
+              onClick={() => setShowPromptModal(false)}
+              className="border-zinc-800 text-zinc-400 hover:text-white"
+            >
+              Cerrar
+            </Button>
+            <Button
+              type="button"
+              size="sm"
+              onClick={handleCopyPrompt}
+              className="bg-indigo-600 hover:bg-indigo-500 text-white gap-2 font-medium"
+            >
+              {copiedPrompt ? (
+                <>
+                  <Check className="h-4 w-4 text-emerald-300" />
+                  ¡Prompt Copiado!
+                </>
+              ) : (
+                <>
+                  <Copy className="h-4 w-4" />
+                  Copiar Prompt al Portapapeles
+                </>
+              )}
+            </Button>
           </DialogFooter>
         </DialogContent>
       </Dialog>

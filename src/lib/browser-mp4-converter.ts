@@ -352,6 +352,18 @@ export async function renderHtmlToMp4InBrowser({
       throw new Error("No se pudo inicializar el contenedor de renderizado.");
     }
 
+    const hasKeyframes = /@keyframes/i.test(html);
+    const autoMotion = !hasKeyframes
+      ? `@keyframes __zyrvae_cinematic_motion {
+          0% { transform: scale(1) translateY(0); }
+          50% { transform: scale(1.04) translateY(-8px); }
+          100% { transform: scale(1.08) translateY(0); }
+        }
+        img, .bg, .hero, .card, .main, [class*="card"], [class*="hero"], [class*="poster"], [class*="banner"] {
+          animation: __zyrvae_cinematic_motion 15s ease-in-out infinite alternate !important;
+        }`
+      : "";
+
     const cleanStyle =
       cleanVideo !== false
         ? `<style id="__zyrvae_clean_video">
@@ -374,6 +386,7 @@ export async function renderHtmlToMp4InBrowser({
               object-fit: contain !important;
               margin: 0 auto !important;
             }
+            ${autoMotion}
           </style>`
         : "";
 

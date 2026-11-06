@@ -201,6 +201,22 @@ export function sanitizeHtml(rawHtml, width = 1080, height = 1920, cleanVideo = 
     `
     : "";
 
+  const hasKeyframes = /@keyframes/i.test(html);
+  // Si el HTML no contiene @keyframes (es decir, el prompt generó un flyer o foto estática),
+  // inyectamos un movimiento cinemático suave (Ken Burns) para que el MP4 jamás salga congelado
+  const autoCinematicRules = !hasKeyframes
+    ? `
+    @keyframes __zyrvae_cinematic_motion {
+      0% { transform: scale(1) translateY(0); }
+      50% { transform: scale(1.04) translateY(-8px); }
+      100% { transform: scale(1.08) translateY(0); }
+    }
+    img, .bg, .hero, .card, .main, [class*="card"], [class*="hero"], [class*="poster"], [class*="banner"] {
+      animation: __zyrvae_cinematic_motion 15s ease-in-out infinite alternate !important;
+    }
+    `
+    : "";
+
   const baseResetStyle = `<style id="__zyrvae_base_reset">
     html, body {
       width: ${width}px !important;
@@ -212,6 +228,7 @@ export function sanitizeHtml(rawHtml, width = 1080, height = 1920, cleanVideo = 
       background: #09090b !important;
     }
     ${cleanVideoRules}
+    ${autoCinematicRules}
   </style>`;
 
   const hasHtmlTag = /<html[\s>]/i.test(html) || /<!doctype/i.test(html);
