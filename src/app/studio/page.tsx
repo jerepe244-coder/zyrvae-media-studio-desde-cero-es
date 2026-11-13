@@ -23,6 +23,11 @@ import {
   Bookmark,
   FolderOpen,
   Film,
+  Gauge,
+  Eye,
+  EyeOff,
+  Music,
+  X,
 } from "lucide-react";
 
 import { Button } from "@/components/ui/button";
@@ -61,7 +66,8 @@ export const getTechnicalAiPrompt = (
   durationSec: number = 15,
   aspectRatio: string = "9:16",
   width: number = 1080,
-  height: number = 1920
+  height: number = 1920,
+  fps: number = 30
 ): string => {
   const durationLabel =
     durationSec === 60
@@ -90,7 +96,7 @@ REGLAS TÉCNICAS OBLIGATORIAS PARA EL RENDERIZADO:
    - El dinamismo visual debe mantenerse activo de principio a fin sin quedarse congelado como una imagen fija.
 
 4. SINCRONIZACIÓN CON LA DURACIÓN DEL VIDEO:
-   - Duración total del video configurada: ${durationLabel}.
+   - Duración total del video configurada: ${durationLabel} a ${fps} FPS (${Math.round(durationSec * fps)} cuadros).
    - Configura las animaciones, transiciones o bucles para que se sincronicen armónicamente a lo largo de estos ${durationSec} segundos (sin cortarse antes de tiempo ni frenarse).
 
 5. FORMATO, RESOLUCIÓN Y ENCUADRE:
@@ -129,9 +135,20 @@ export default function StudioPage() {
 
   // Parámetros de salida del video
   const [durationSeconds, setDurationSeconds] = React.useState<number>(15);
+  const [fps, setFps] = React.useState<30 | 60>(30);
   const [aspectRatio, setAspectRatio] = React.useState<"9:16" | "16:9" | "1:1">("9:16");
   const [cleanVideoMode, setCleanVideoMode] = React.useState<boolean>(true);
+  const [showSafeZones, setShowSafeZones] = React.useState<boolean>(false);
   const [htmlTitle, setHtmlTitle] = React.useState<string>("Comercial_ZYRVAE");
+
+  // Pista de audio opcional (.mp3 / .wav)
+  const audioInputRef = React.useRef<HTMLInputElement>(null);
+  const [audioFile, setAudioFile] = React.useState<{
+    name: string;
+    ext: "mp3" | "wav";
+    sizeBytes: number;
+    base64: string;
+  } | null>(null);
 
   // Estado del código HTML y versión debounced para el visor
   const [htmlCode, setHtmlCode] = React.useState<string>(() => createSampleAdHtml(15));
@@ -154,6 +171,12 @@ export default function StudioPage() {
   const [isLoading, setIsLoading] = React.useState(false);
   const [progressPercent, setProgressPercent] = React.useState<number>(0);
   const [progressStatus, setProgressStatus] = React.useState<string>("");
+  const [progressPhase, setProgressPhase] = React.useState<string>("");
+  const [progressFrames, setProgressFrames] = React.useState<{
+    frame: number;
+    totalFrames: number;
+  } | null>(null);
+  const [usingBrowserFallback, setUsingBrowserFallback] = React.useState<boolean>(false);
 
   const [feedback, setFeedback] = React.useState<{
     type: "success" | "error";
@@ -162,6 +185,7 @@ export default function StudioPage() {
     engine?: string;
     downloadUrl?: string;
     filename?: string;
+    usedFallback?: boolean;
   } | null>(null);
 
   // Dimensiones según la proporción seleccionada
@@ -213,15 +237,16 @@ export default function StudioPage() {
     }
   }, []);
 
-  // Prompt técnico sincronizado con la duración y dimensiones seleccionadas actualmente
+  // Prompt técnico sincronizado con la duración, FPS y dimensiones seleccionadas actualmente
   const dynamicAiPrompt = React.useMemo(() => {
     return getTechnicalAiPrompt(
       durationSeconds,
       aspectRatio,
       dimensions.width,
-      dimensions.height
+      dimensions.height,
+      fps
     );
-  }, [durationSeconds, aspectRatio, dimensions.width, dimensions.height]);
+  }, [durationSeconds, aspectRatio, dimensions.width, dimensions.height, fps]);
 
   const handleCopyPrompt = async () => {
     try {
@@ -411,14 +436,54 @@ export default function StudioPage() {
     return { url, filename };
   };
 
-  // Conversión infalible de HTML a MP4
+  // Cargar pista de audio opcional (.mp3 / .wav) — límite 3.5 MB para respetar el tope de 4.5 MB en Vercel
+  const handleAudioFileChange = (e: React.ChangeEvent<HTMLInputElement>) => {
+    const file = e.target.files?.[0];
+    if (!file) return;
+
+    const lower = file.name.toLowerCase();
+    if (!lower.endsWith(".mp3") && !lower.endsWith(".wav")) {
+      setBannerNotice("Formato de audio no compatible. Adjunta un archivo .mp3 o .wav.");
+      setTimeout(() => setBannerNotice(null), 4000);
+      e.target.value = "";
+      return;
+    }
+
+    const MAX_AUDIO_BYTES = Math.floor(3.5 * 1024 * 1024);
+    if (file.size > MAX_AUDIO_BYTES) {
+      setBannerNotice(
+        "El audio supera 3.5 MB (límite de Vercel 4.5 MB con Base64). Te recomendamos usar un .mp3 comprimido en lugar de .wav."
+      );
+      setTimeout(() => setBannerNotice(null), 6000);
+      e.target.value = "";
+      return;
+    }
+
+    const reader = new FileReader();
+    reader.onload = () => {
+      const result = typeof reader.result === "string" ? reader.result : "";
+      const base64 = result.includes(",") ? result.split(",")[1] : result;
+      setAudioFile({
+        name: file.name,
+        ext: lower.endsWith(".wav") ? "wav" : "mp3",
+        sizeBytes: file.size,
+        base64,
+      });
+    };
+    reader.readAsDataURL(file);
+  };
+
+  // Conversión asíncrona de HTML a MP4 con progreso real y respaldo local en navegador
   const handleRenderVideo = async () => {
     if (isLoading || !htmlCode.trim()) return;
 
     setIsLoading(true);
     setFeedback(null);
-    setProgressPercent(8);
-    setProgressStatus("Conectando con el motor de conversión MP4...");
+    setUsingBrowserFallback(false);
+    setProgressPercent(2);
+    setProgressPhase("queued");
+    setProgressFrames({ frame: 0, totalFrames: Math.round(durationSeconds * fps) });
+    setProgressStatus("Encolando trabajo en el motor de renderizado...");
 
     const safeTitle = htmlTitle.trim() || "Comercial_ZYRVAE";
     const requestPayload = {
@@ -426,103 +491,225 @@ export default function StudioPage() {
       html: htmlCode,
       title: safeTitle,
       duration: durationSeconds,
-      fps: 24,
+      fps,
       width: dimensions.width,
       height: dimensions.height,
       cleanVideo: cleanVideoMode,
-      download: true,
+      audioData: audioFile?.base64 || null,
+      audioExt: audioFile?.ext || null,
+      async: true,
     };
 
-    let progressInterval: ReturnType<typeof setInterval> | null = setInterval(() => {
-      setProgressPercent((prev) => {
-        if (prev >= 85) return prev;
-        return prev + 4;
-      });
-    }, 700);
-
-    const clearProgressTimer = () => {
-      if (progressInterval) {
-        clearInterval(progressInterval);
-        progressInterval = null;
+    const formatPhaseLabel = (
+      phase: string,
+      frame?: number,
+      totalFrames?: number,
+      queuePosition?: number
+    ) => {
+      switch (phase) {
+        case "queued":
+          return queuePosition && queuePosition > 0
+            ? `En cola de espera (turno ${queuePosition})...`
+            : "En cola de renderizado...";
+        case "capturing":
+          return frame && totalFrames
+            ? `Capturando fotograma ${frame} de ${totalFrames} (${fps} FPS)...`
+            : "Capturando fotogramas PNG deterministas...";
+        case "encoding":
+          return "Codificando MP4 H.264 (CRF 18)...";
+        case "done":
+          return "¡Video compilado! Descargando MP4...";
+        default:
+          return "Procesando video...";
       }
+    };
+
+    const pollJobUntilDone = async (
+      statusEndpointBuilder: (jobId: string) => string,
+      downloadEndpointBuilder: (jobId: string, statusData: Record<string, unknown>) => string[],
+      jobId: string
+    ): Promise<Blob> => {
+      const maxWaitMs = 15 * 60 * 1000;
+      const startedAt = Date.now();
+
+      while (Date.now() - startedAt < maxWaitMs) {
+        await new Promise((r) => setTimeout(r, 1500));
+
+        const statusRes = await fetch(statusEndpointBuilder(jobId), {
+          cache: "no-store",
+          signal: AbortSignal.timeout(10000),
+        });
+        if (!statusRes.ok) {
+          throw new Error(`No se pudo consultar el estado del trabajo (${statusRes.status}).`);
+        }
+
+        const data = (await statusRes.json()) as Record<string, unknown>;
+        const status = String(data.status || data.phase || "capturing");
+        const frame = typeof data.frame === "number" ? data.frame : 0;
+        const totalFrames =
+          typeof data.totalFrames === "number" ? data.totalFrames : Math.round(durationSeconds * fps);
+        const queuePosition = typeof data.queuePosition === "number" ? data.queuePosition : 0;
+        const percent = typeof data.percent === "number" ? data.percent : 0;
+
+        setProgressPhase(status);
+        setProgressFrames({ frame, totalFrames });
+        setProgressPercent(Math.max(2, Math.min(99, percent)));
+        setProgressStatus(formatPhaseLabel(status, frame, totalFrames, queuePosition));
+
+        if (status === "error") {
+          throw new Error(String(data.error || "El servidor reportó un error durante el renderizado."));
+        }
+
+        if (status === "done") {
+          setProgressPercent(99);
+          setProgressStatus("Descargando MP4 terminado...");
+          const candidateUrls = downloadEndpointBuilder(jobId, data);
+          for (const dlUrl of candidateUrls) {
+            if (!dlUrl) continue;
+            try {
+              const fileRes = await fetch(dlUrl, { cache: "no-store" });
+              if (fileRes.ok) {
+                const blob = await fileRes.blob();
+                if (blob.size >= 500) return blob;
+              }
+            } catch {}
+          }
+          throw new Error("El archivo MP4 terminó de renderizarse pero falló la descarga.");
+        }
+      }
+
+      throw new Error("El trabajo excedió el tiempo máximo de espera.");
     };
 
     try {
       let mp4Blob: Blob | null = null;
-      let usedEngine = "Motor Cloud Dedicado (Puppeteer + FFmpeg)";
+      let usedEngine = "Motor Cloud Dedicado (Puppeteer WAAPI + FFmpeg H.264)";
+      let usedFallback = false;
 
-      // ETAPA 1: Llamada directa Cloud
+      // ETAPA 1: Llamada directa asíncrona al renderer-service (sin pasar por timeout ni tope de 4.5 MB de Vercel)
       const targetCloudUrl = (rendererUrl || DEFAULT_RENDERER_URL).replace(/\/$/, "");
       try {
-        setProgressStatus("Renderizando fotogramas HTML en servidor Cloud...");
         const directRes = await fetch(`${targetCloudUrl}/render`, {
           method: "POST",
           mode: "cors",
           headers: {
             "Content-Type": "application/json",
-            Accept: "video/mp4, application/json",
+            Accept: "application/json, video/mp4",
           },
           body: JSON.stringify(requestPayload),
-          signal: AbortSignal.timeout(40000),
+          signal: AbortSignal.timeout(15000),
         });
 
         const directType = directRes.headers.get("content-type") || "";
-        if (directRes.ok && (directType.includes("video/mp4") || directType.includes("octet-stream"))) {
+        if (directRes.ok && directType.includes("application/json")) {
+          const jobInit = await directRes.json();
+          if (jobInit?.jobId) {
+            usedEngine = "Motor Cloud Dedicado (Async Job · Puppeteer + FFmpeg)";
+            mp4Blob = await pollJobUntilDone(
+              (id) => `${targetCloudUrl}/render?jobId=${encodeURIComponent(id)}`,
+              (id) => [
+                `${targetCloudUrl}/render/download/${encodeURIComponent(id)}`,
+                `/api/render?jobId=${encodeURIComponent(id)}&download=1`,
+              ],
+              jobInit.jobId
+            );
+          }
+        } else if (
+          directRes.ok &&
+          (directType.includes("video/mp4") || directType.includes("octet-stream"))
+        ) {
           mp4Blob = await directRes.blob();
-          usedEngine = "Motor Cloud Dedicado (HTML → MP4 Directo)";
         }
       } catch (directErr) {
         console.warn("[Conversor MP4] Aviso en llamada directa, pasando a API proxy:", directErr);
       }
 
-      // ETAPA 2: Proxy API
+      // ETAPA 2: Proxy API (/api/render) con trabajo asíncrono + polling
       if (!mp4Blob) {
+        let proxyPayloadTooLargeMessage: string | null = null;
         try {
-          setProgressStatus("Procesando video a través de la API proxy...");
+          setProgressStatus("Conectando vía API proxy de estudio...");
           const apiRes = await fetch("/api/render", {
             method: "POST",
             headers: {
               "Content-Type": "application/json",
             },
             body: JSON.stringify(requestPayload),
-            signal: AbortSignal.timeout(42000),
+            signal: AbortSignal.timeout(18000),
           });
 
-          const apiType = apiRes.headers.get("content-type") || "";
-          if (apiRes.ok && (apiType.includes("video/mp4") || apiType.includes("octet-stream"))) {
-            mp4Blob = await apiRes.blob();
-            usedEngine = "Servidor Cloud de Video MP4";
+          if (apiRes.status === 413) {
+            const errBody = await apiRes.json().catch(() => null);
+            proxyPayloadTooLargeMessage =
+              errBody?.message ||
+              "El archivo de audio excede el límite de 4.5 MB del proxy Vercel. Usá un .mp3 menor a 3 MB.";
+          } else {
+            const apiType = apiRes.headers.get("content-type") || "";
+            if (apiRes.ok && apiType.includes("application/json")) {
+              const jobInit = await apiRes.json();
+              if (jobInit?.jobId) {
+                usedEngine = "Servidor Cloud de Video MP4 (Async Proxy)";
+                mp4Blob = await pollJobUntilDone(
+                  (id) => `/api/render?jobId=${encodeURIComponent(id)}`,
+                  (id, statusData) => [
+                    typeof statusData.directDownloadUrl === "string"
+                      ? statusData.directDownloadUrl
+                      : "",
+                    `/api/render?jobId=${encodeURIComponent(id)}&download=1`,
+                  ],
+                  jobInit.jobId
+                );
+              }
+            } else if (
+              apiRes.ok &&
+              (apiType.includes("video/mp4") || apiType.includes("octet-stream"))
+            ) {
+              mp4Blob = await apiRes.blob();
+              usedEngine = "Servidor Cloud de Video MP4";
+            }
           }
         } catch (apiErr) {
-          console.warn("[Conversor MP4] Aviso en API proxy, activando motor local de respaldo:", apiErr);
+          console.warn(
+            "[Conversor MP4] Aviso en API proxy, activando motor local de respaldo:",
+            apiErr
+          );
+        }
+
+        if (proxyPayloadTooLargeMessage) {
+          throw new Error(proxyPayloadTooLargeMessage);
         }
       }
 
-      // ETAPA 3: Motor local de navegador
+      // ETAPA 3: Fallback explícito al motor local del navegador
       if (!mp4Blob || mp4Blob.size < 500) {
-        clearProgressTimer();
-        usedEngine = "Motor MP4 Integrado en Navegador (Instantáneo)";
+        usedFallback = true;
+        setUsingBrowserFallback(true);
+        setProgressPhase("fallback");
+        usedEngine = "Motor Local de Navegador (Respaldo — sin audio externo)";
         mp4Blob = await renderHtmlToMp4InBrowser({
           html: htmlCode,
           durationSeconds,
+          fps,
           width: dimensions.width,
           height: dimensions.height,
           cleanVideo: cleanVideoMode,
-          onProgress: (pct, statusText) => {
+          onProgress: (pct, statusText, meta) => {
             setProgressPercent(pct);
             setProgressStatus(statusText);
+            if (meta) {
+              setProgressFrames(meta);
+            }
           },
         });
       }
 
-      clearProgressTimer();
+      setProgressPhase("done");
       setProgressPercent(100);
       setProgressStatus("¡Descargando archivo MP4!");
 
       const { url, filename } = triggerMp4Download(mp4Blob, safeTitle);
       const durText = durationSeconds === 60 ? "1 minuto (60s)" : `${durationSeconds} segundos`;
 
-      // Guardar automáticamente en la Biblioteca local
       try {
         saveProject({
           title: safeTitle,
@@ -535,14 +722,14 @@ export default function StudioPage() {
 
       setFeedback({
         type: "success",
-        message: `¡Tu código fue convertido a MP4 (${durText}) con éxito! La descarga de "${filename}" comenzó automáticamente.`,
+        message: `¡Tu código fue convertido a MP4 (${durText} @ ${fps} FPS) con éxito! La descarga de "${filename}" comenzó automáticamente.`,
         engine: usedEngine,
         downloadUrl: url,
         filename,
+        usedFallback,
       });
       setShowResultModal(true);
     } catch (err: unknown) {
-      clearProgressTimer();
       console.error("Error al convertir a MP4:", err);
       const errorMsg = err instanceof Error ? err.message : String(err);
       setFeedback({
@@ -552,10 +739,11 @@ export default function StudioPage() {
       });
       setShowResultModal(true);
     } finally {
-      clearProgressTimer();
       setIsLoading(false);
       setProgressPercent(0);
       setProgressStatus("");
+      setProgressPhase("");
+      setProgressFrames(null);
     }
   };
 
@@ -717,7 +905,7 @@ export default function StudioPage() {
                   Configuración del Video MP4
                 </CardTitle>
                 <span className="text-[11px] font-mono text-zinc-400">
-                  {dimensions.width}×{dimensions.height} • {durationSeconds}s
+                  {dimensions.width}×{dimensions.height} • {durationSeconds}s • {fps} FPS
                 </span>
               </div>
             </CardHeader>
@@ -848,6 +1036,58 @@ export default function StudioPage() {
                       <span className="text-[9px] text-zinc-500 block">Cuadrado</span>
                     </button>
                   </div>
+                </div>
+              </div>
+
+              {/* Selector de FPS y Calidad */}
+              <div className="pt-1 border-t border-zinc-800/70 space-y-1.5">
+                <div className="flex items-center justify-between text-xs pt-2">
+                  <label className="font-medium text-zinc-300 flex items-center gap-1.5">
+                    <Gauge className="h-3.5 w-3.5 text-indigo-400" />
+                    FPS y Calidad de Captura
+                  </label>
+                  <span className="text-[11px] font-mono text-zinc-400">
+                    {Math.round(durationSeconds * fps)} cuadros • CRF 18
+                  </span>
+                </div>
+                <div className="grid grid-cols-2 gap-2">
+                  <button
+                    type="button"
+                    disabled={isLoading}
+                    onClick={() => setFps(30)}
+                    className={`py-2 px-3 rounded-xl border text-left transition-all flex items-center justify-between ${
+                      fps === 30
+                        ? "bg-indigo-600/25 border-indigo-500 text-white font-semibold ring-1 ring-indigo-500/50"
+                        : "bg-zinc-950/60 border-zinc-800 text-zinc-400 hover:text-zinc-200 hover:border-zinc-700"
+                    }`}
+                  >
+                    <div>
+                      <span className="text-xs font-bold block">30 FPS Estándar</span>
+                      <span className="text-[10px] text-zinc-400 block">Meta Ads / Reels / TikTok</span>
+                    </div>
+                    <span className="text-[10px] font-mono px-1.5 py-0.5 rounded bg-zinc-900/90 text-indigo-300">
+                      30p
+                    </span>
+                  </button>
+
+                  <button
+                    type="button"
+                    disabled={isLoading}
+                    onClick={() => setFps(60)}
+                    className={`py-2 px-3 rounded-xl border text-left transition-all flex items-center justify-between ${
+                      fps === 60
+                        ? "bg-indigo-600/25 border-indigo-500 text-white font-semibold ring-1 ring-indigo-500/50"
+                        : "bg-zinc-950/60 border-zinc-800 text-zinc-400 hover:text-zinc-200 hover:border-zinc-700"
+                    }`}
+                  >
+                    <div>
+                      <span className="text-xs font-bold block">60 FPS Ultra Fluido</span>
+                      <span className="text-[10px] text-zinc-400 block">Máxima suavidad (2× cuadros)</span>
+                    </div>
+                    <span className="text-[10px] font-mono px-1.5 py-0.5 rounded bg-zinc-900/90 text-emerald-300">
+                      60p
+                    </span>
+                  </button>
                 </div>
               </div>
             </CardContent>
@@ -983,7 +1223,7 @@ export default function StudioPage() {
                   Exportar a Video MP4
                 </CardTitle>
                 <span className="text-[11px] text-zinc-400 font-mono">
-                  {durationSeconds === 60 ? "1 min" : `${durationSeconds}s`} • H.264
+                  {durationSeconds === 60 ? "1 min" : `${durationSeconds}s`} • {fps} FPS • H.264
                 </span>
               </div>
 
@@ -1010,24 +1250,103 @@ export default function StudioPage() {
                 </label>
               </div>
 
+              {/* Pista de Audio Opcional (.mp3 / .wav) */}
+              <div className="p-3 rounded-xl bg-zinc-950/60 border border-zinc-800/80 space-y-2">
+                <div className="flex items-center justify-between gap-2">
+                  <div className="flex items-center gap-2 text-xs">
+                    <Music className="h-3.5 w-3.5 text-indigo-400 shrink-0" />
+                    <span className="font-semibold text-zinc-200">
+                      Pista de Audio Opcional (.mp3 / .wav)
+                    </span>
+                  </div>
+                  <input
+                    ref={audioInputRef}
+                    type="file"
+                    accept=".mp3,.wav,audio/mpeg,audio/wav"
+                    disabled={isLoading}
+                    onChange={handleAudioFileChange}
+                    className="hidden"
+                  />
+                  {audioFile ? (
+                    <button
+                      type="button"
+                      disabled={isLoading}
+                      onClick={() => {
+                        setAudioFile(null);
+                        if (audioInputRef.current) audioInputRef.current.value = "";
+                      }}
+                      className="inline-flex items-center gap-1 px-2 py-1 rounded-lg text-[11px] bg-red-500/15 text-red-300 border border-red-500/30 hover:bg-red-500/25 transition-colors"
+                    >
+                      <X className="h-3 w-3" />
+                      Quitar
+                    </button>
+                  ) : (
+                    <Button
+                      type="button"
+                      size="sm"
+                      variant="outline"
+                      disabled={isLoading}
+                      onClick={() => audioInputRef.current?.click()}
+                      className="h-7 text-[11px] border-zinc-700 bg-zinc-900 hover:bg-zinc-800 text-zinc-200"
+                    >
+                      Adjuntar Audio
+                    </Button>
+                  )}
+                </div>
+                {audioFile ? (
+                  <p className="text-[11px] font-mono text-emerald-300 truncate">
+                    ✓ {audioFile.name} ({(audioFile.sizeBytes / (1024 * 1024)).toFixed(2)} MB) — Mezcla AAC 192k (-shortest)
+                  </p>
+                ) : (
+                  <p className="text-[11px] text-zinc-500">
+                    Opcional (máx. 3.5 MB · recomendado .mp3 en lugar de .wav): música o locución mezclada en FFmpeg.
+                  </p>
+                )}
+              </div>
+
+              {/* Aviso claro si se activó el Fallback Local del Navegador */}
+              {usingBrowserFallback && isLoading && (
+                <div className="p-3 rounded-xl bg-amber-500/10 border border-amber-500/40 text-xs text-amber-200 flex items-start gap-2">
+                  <AlertCircle className="h-4 w-4 text-amber-400 shrink-0 mt-0.5" />
+                  <div>
+                    <p className="font-semibold text-amber-300">
+                      Usando renderizador local del navegador (modo respaldo)
+                    </p>
+                    <p className="text-[11px] text-amber-200/80 mt-0.5 leading-relaxed">
+                      El servidor dedicado (renderer-service) no respondió a tiempo. El video se está codificando localmente en tu navegador (la mezcla de audio externo no está disponible en modo local).
+                    </p>
+                  </div>
+                </div>
+              )}
+
               {/* Barra de Progreso en Vivo */}
               {isLoading && (
                 <div className="p-3.5 rounded-xl bg-zinc-950/90 border border-indigo-500/40 space-y-2">
-                  <div className="flex items-center justify-between text-xs">
-                    <span className="text-indigo-300 font-medium flex items-center gap-2">
-                      <Loader2 className="h-3.5 w-3.5 animate-spin text-indigo-400" />
-                      {progressStatus || "Convirtiendo HTML a MP4..."}
+                  <div className="flex items-center justify-between text-xs gap-2">
+                    <span className="text-indigo-300 font-medium flex items-center gap-2 truncate">
+                      <Loader2 className="h-3.5 w-3.5 animate-spin text-indigo-400 shrink-0" />
+                      <span className="truncate">{progressStatus || "Convirtiendo HTML a MP4..."}</span>
                     </span>
-                    <span className="font-mono text-xs font-bold text-indigo-400">
+                    <span className="font-mono text-xs font-bold text-indigo-400 shrink-0">
                       {progressPercent}%
                     </span>
                   </div>
                   <div className="w-full h-2 bg-zinc-800 rounded-full overflow-hidden">
                     <div
                       className="h-full bg-gradient-to-r from-indigo-500 via-purple-500 to-emerald-400 transition-all duration-300"
-                      style={{ width: `${Math.max(5, progressPercent)}%` }}
+                      style={{ width: `${Math.max(4, progressPercent)}%` }}
                     />
                   </div>
+                  {progressFrames && (
+                    <div className="flex items-center justify-between text-[10px] font-mono text-zinc-400">
+                      <span>
+                        Estado: {progressPhase || "procesando"}
+                      </span>
+                      <span>
+                        {progressFrames.frame} / {progressFrames.totalFrames} cuadros ({fps} FPS)
+                      </span>
+                    </div>
+                  )}
                 </div>
               )}
 
@@ -1065,12 +1384,25 @@ export default function StudioPage() {
           }`}
         >
           {/* Barra superior del visor */}
-          <div className="w-full max-w-[280px] xs:max-w-[320px] sm:max-w-[340px] flex items-center justify-between px-2 text-xs">
+          <div className="w-full max-w-[280px] xs:max-w-[320px] sm:max-w-[340px] flex items-center justify-between px-2 text-xs gap-2">
             <span className="font-semibold uppercase tracking-wider text-zinc-300 flex items-center gap-1.5 text-[11px]">
               <Smartphone className="h-3.5 w-3.5 text-indigo-400" />
               Vista Previa en Vivo
             </span>
             <div className="flex items-center gap-1.5">
+              <button
+                type="button"
+                onClick={() => setShowSafeZones((v) => !v)}
+                className={`px-2 py-1 rounded text-[10px] font-medium flex items-center gap-1 border transition-colors ${
+                  showSafeZones
+                    ? "bg-emerald-500/20 border-emerald-500/50 text-emerald-300"
+                    : "bg-zinc-900 border-zinc-800 text-zinc-400 hover:text-zinc-200"
+                }`}
+                title="Mostrar/ocultar guías de Safe Zones (Reels, TikTok, Shorts) — solo visual, no se exporta"
+              >
+                {showSafeZones ? <Eye className="h-3 w-3" /> : <EyeOff className="h-3 w-3" />}
+                Safe Zone
+              </button>
               <button
                 type="button"
                 onClick={() => setIframeKey((k) => k + 1)}
@@ -1129,7 +1461,7 @@ export default function StudioPage() {
                       transform: `scale(${previewScale})`,
                       transformOrigin: "center center",
                     }}
-                    className="shrink-0 pointer-events-auto"
+                    className="relative shrink-0 pointer-events-auto"
                   >
                     <iframe
                       key={iframeKey}
@@ -1139,6 +1471,47 @@ export default function StudioPage() {
                       style={{ width: dimensions.width, height: dimensions.height }}
                       className="border-0 bg-zinc-950"
                     />
+
+                    {/* Overlay visual de Safe Zones (Reels / TikTok / Shorts) — NO se incluye en el MP4 */}
+                    {showSafeZones && (
+                      <div className="absolute inset-0 pointer-events-none z-20">
+                        {/* Zona superior (15%) */}
+                        <div
+                          style={{ height: "15%" }}
+                          className="absolute top-0 left-0 right-0 bg-rose-500/20 border-b-2 border-dashed border-rose-400 flex items-end justify-center pb-3"
+                        >
+                          <span className="px-4 py-1 bg-black/75 text-rose-200 font-mono text-2xl tracking-widest uppercase">
+                            UI SUPERIOR (15%)
+                          </span>
+                        </div>
+
+                        {/* Zona inferior Reels / TikTok / Shorts (22%) */}
+                        <div
+                          style={{ height: "22%" }}
+                          className="absolute bottom-0 left-0 right-0 bg-rose-500/20 border-t-2 border-dashed border-rose-400 flex items-start justify-center pt-4"
+                        >
+                          <span className="px-4 py-1 bg-black/75 text-rose-200 font-mono text-2xl tracking-widest uppercase">
+                            UI REELS / TIKTOK / SHORTS (22%)
+                          </span>
+                        </div>
+
+                        {/* Zona lateral derecha botones de interacción (12%) */}
+                        <div
+                          style={{ top: "15%", bottom: "22%", width: "12%" }}
+                          className="absolute right-0 bg-amber-500/15 border-l-2 border-dashed border-amber-400 flex items-center justify-center"
+                        >
+                          <span className="px-2 py-1 bg-black/75 text-amber-200 font-mono text-xl -rotate-90 whitespace-nowrap uppercase">
+                            BOTONES (12%)
+                          </span>
+                        </div>
+
+                        {/* Rectángulo verde de área segura de contenido */}
+                        <div
+                          style={{ top: "15%", bottom: "22%", left: "7%", right: "12%" }}
+                          className="absolute border-2 border-dashed border-emerald-400/80"
+                        />
+                      </div>
+                    )}
                   </div>
                 )}
 
@@ -1395,18 +1768,28 @@ export default function StudioPage() {
                 <div className="flex justify-between">
                   <span>Resolución:</span>
                   <span className="font-mono text-zinc-200">
-                    {dimensions.width}×{dimensions.height} ({aspectRatio})
+                    {dimensions.width}×{dimensions.height} ({aspectRatio} · {fps} FPS)
                   </span>
                 </div>
                 {feedback.engine && (
                   <div className="flex justify-between">
                     <span>Motor empleado:</span>
-                    <span className="font-mono text-emerald-400 text-[11px] truncate max-w-[200px]">
+                    <span
+                      className={`font-mono text-[11px] truncate max-w-[200px] ${
+                        feedback.usedFallback ? "text-amber-400" : "text-emerald-400"
+                      }`}
+                    >
                       {feedback.engine}
                     </span>
                   </div>
                 )}
               </div>
+
+              {feedback.usedFallback && (
+                <div className="p-2.5 rounded-xl bg-amber-500/10 border border-amber-500/30 text-[11px] text-amber-200 leading-relaxed">
+                  Aviso: Este video se exportó con el renderizador local del navegador porque el servicio dedicado no estuvo disponible.
+                </div>
+              )}
             </div>
           )}
 

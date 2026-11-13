@@ -21,11 +21,160 @@ export function getRendererUrl(): string {
   return rawUrl.replace(/\/$/, "");
 }
 
-// Verificar estado y despertar (pre-warm) el motor dedicado en la nube
-export async function GET() {
-  const backendUrl = getRendererUrl();
+function isPrivateOrLocalHostname(hostname: string): boolean {
+  const host = hostname.toLowerCase();
+  if (
+    host === "localhost" ||
+    host === "127.0.0.1" ||
+    host === "0.0.0.0" ||
+    host === "::1" ||
+    host.endsWith(".local") ||
+    host.endsWith(".internal")
+  ) {
+    return true;
+  }
+  if (/^10\./.test(host) || /^192\.168\./.test(host)) return true;
+  const match172 = host.match(/^172\.(\d+)\./);
+  if (match172) {
+    const secondOctet = Number(match172[1]);
+    if (secondOctet >= 16 && secondOctet <= 31) return true;
+  }
+  return false;
+}
 
+export function isPublicHttpsUrl(rawUrl: string): boolean {
+  if (!rawUrl) return false;
+  try {
+    const parsed = new URL(rawUrl);
+    return parsed.protocol === "https:" && !isPrivateOrLocalHostname(parsed.hostname);
+  } catch {
+    return false;
+  }
+}
+
+export function getPublicRendererUrl(backendFallback?: string): string | null {
+  const candidates = [
+    process.env.RENDERER_PUBLIC_URL,
+    process.env.NEXT_PUBLIC_RENDERER_URL,
+    backendFallback,
+  ]
+    .map((u) => (u || "").trim().replace(/\/$/, ""))
+    .filter(Boolean);
+
+  for (const candidate of candidates) {
+    if (isPublicHttpsUrl(candidate)) return candidate;
+  }
+  return null;
+}
+
+const MAX_VERCEL_AUDIO_BASE64_CHARS = Math.ceil(3.5 * 1024 * 1024 * 1.37);
+
+// Consultar estado de un trabajo (?jobId=...), descargar MP4 (?jobId=...&download=1) o precalentar motor (/health)
+export async function GET(request: Request) {
+  const backendUrl = getRendererUrl();
+  const { searchParams } = new URL(request.url);
+  const jobId = searchParams.get("jobId")?.trim();
+  const wantsDownload =
+    searchParams.get("download") === "1" || searchParams.get("download") === "true";
+
+  if (jobId) {
+    if (!backendUrl) {
+      return NextResponse.json(
+        { error: "Motor en la nube no configurado", fallbackToBrowser: true },
+        { status: 503 }
+      );
+    }
+
+    const cleanUrl = backendUrl.replace(/\/$/, "");
+
+    if (wantsDownload) {
+      try {
+        const upstream = await fetch(
+          `${cleanUrl}/render/download/${encodeURIComponent(jobId)}`,
+          {
+            cache: "no-store",
+            signal: AbortSignal.timeout(45000),
+          }
+        );
+
+        if (!upstream.ok || !upstream.body) {
+          const errText = await upstream.text().catch(() => "");
+          return NextResponse.json(
+            { error: "No se pudo descargar el MP4", details: errText },
+            { status: upstream.status || 502 }
+          );
+        }
+
+        const headers = new Headers();
+        headers.set("Content-Type", upstream.headers.get("content-type") || "video/mp4");
+        const contentDisposition = upstream.headers.get("content-disposition");
+        if (contentDisposition) headers.set("Content-Disposition", contentDisposition);
+        const contentLength = upstream.headers.get("content-length");
+        if (contentLength) headers.set("Content-Length", contentLength);
+        headers.set("X-Engine", "Dedicated-Render-Cloud-v3");
+
+        return new Response(upstream.body, {
+          status: 200,
+          headers,
+        });
+      } catch (err: unknown) {
+        return NextResponse.json(
+          {
+            error: "Error al transmitir descarga MP4",
+            details: err instanceof Error ? err.message : String(err),
+          },
+          { status: 502 }
+        );
+      }
+    }
+
+    try {
+      const statusRes = await fetch(
+        `${cleanUrl}/render?jobId=${encodeURIComponent(jobId)}`,
+        {
+          cache: "no-store",
+          signal: AbortSignal.timeout(10000),
+        }
+      );
+
+      const data = await statusRes.json().catch(() => null);
+      if (!statusRes.ok || !data) {
+        return NextResponse.json(
+          {
+            error: data?.error || "No se pudo consultar el progreso del trabajo",
+            jobId,
+          },
+          { status: statusRes.status || 502 }
+        );
+      }
+
+      const publicUrl = getPublicRendererUrl(cleanUrl);
+      return NextResponse.json({
+        ...data,
+        rendererUrl: publicUrl,
+        directDownloadUrl:
+          data.status === "done" && publicUrl
+            ? `${publicUrl}/render/download/${encodeURIComponent(jobId)}`
+            : null,
+        downloadUrl:
+          data.status === "done"
+            ? `/api/render?jobId=${encodeURIComponent(jobId)}&download=1`
+            : null,
+      });
+    } catch (err: unknown) {
+      return NextResponse.json(
+        {
+          error: "Error consultando estado del render",
+          details: err instanceof Error ? err.message : String(err),
+        },
+        { status: 502 }
+      );
+    }
+  }
+
+  // Sin jobId: verificar estado y despertar (pre-warm) el motor dedicado en la nube
   if (backendUrl) {
+    const publicUrl = getPublicRendererUrl(backendUrl);
     try {
       const cleanUrl = backendUrl.replace(/\/$/, "");
       const res = await fetch(`${cleanUrl}/health`, {
@@ -37,8 +186,8 @@ export async function GET() {
         return NextResponse.json({
           status: "connected",
           engine: "Render.com / Railway Dedicated Microservice",
-          rendererUrl: cleanUrl,
-          url: cleanUrl,
+          rendererUrl: publicUrl,
+          url: publicUrl,
           details: data,
         });
       }
@@ -46,8 +195,8 @@ export async function GET() {
       return NextResponse.json({
         status: "waking_up",
         engine: "Render.com / Railway + Browser Hybrid",
-        rendererUrl: backendUrl,
-        url: backendUrl,
+        rendererUrl: publicUrl,
+        url: publicUrl,
         error: err instanceof Error ? err.message : String(err),
       });
     }
@@ -56,10 +205,11 @@ export async function GET() {
   return NextResponse.json({
     status: "browser_ready",
     engine: "Motor Híbrido (Cloud + Navegador)",
-    rendererUrl: backendUrl,
+    rendererUrl: getPublicRendererUrl(backendUrl),
   });
 }
 
+// Inicia un trabajo asíncrono de renderizado en renderer-service y devuelve { jobId } de inmediato
 export async function POST(request: Request) {
   try {
     const backendUrl = getRendererUrl();
@@ -72,11 +222,25 @@ export async function POST(request: Request) {
       props,
       remotionProps,
       duration,
+      fps,
       accentColor,
       width,
       height,
       cleanVideo,
+      audioData,
+      audioExt,
     } = body || {};
+
+    if (typeof audioData === "string" && audioData.length > MAX_VERCEL_AUDIO_BASE64_CHARS) {
+      return NextResponse.json(
+        {
+          error: "Audio demasiado pesado para el proxy de Vercel",
+          message:
+            "El audio supera ~3.5 MB. Usá un archivo .mp3 comprimido (< 3.5 MB) o conexión directa con el microservicio.",
+        },
+        { status: 413 }
+      );
+    }
 
     const videoTitle =
       (title && String(title).trim()) || props?.title || "Comercial ZYRVAE";
@@ -85,6 +249,7 @@ export async function POST(request: Request) {
       : "15";
     const selectedColor = accentColor || props?.accentColor || "#6366f1";
     const safeNumDuration = Math.min(Math.max(parseInt(videoDuration, 10) || 15, 1), 120);
+    const safeNumFps = Math.min(Math.max(Math.round(Number(fps) || 30), 1), 60);
 
     if (backendUrl) {
       const cleanBackendUrl = backendUrl.replace(/\/$/, "");
@@ -94,11 +259,14 @@ export async function POST(request: Request) {
         html: html || html_code || "",
         title: videoTitle,
         duration: safeNumDuration,
-        fps: 24,
+        fps: safeNumFps,
         width: Number(width) || 1080,
         height: Number(height) || 1920,
         cleanVideo: cleanVideo !== false,
         accentColor: selectedColor,
+        audioData: audioData || null,
+        audioExt: audioExt || null,
+        async: true,
         props: {
           title: videoTitle,
           subtitle: props?.subtitle || "Imprenta de Video Automatizada",
@@ -114,10 +282,8 @@ export async function POST(request: Request) {
           ...(remotionProps || {}),
           ...(props || {}),
         },
-        download: true,
       };
 
-      // Intentar renderizado con reintento automático si el contenedor está despertando (502/503)
       let microserviceResponse: Response | null = null;
       let lastErrorText = "";
 
@@ -127,10 +293,10 @@ export async function POST(request: Request) {
             method: "POST",
             headers: {
               "Content-Type": "application/json",
-              Accept: "video/mp4, application/json",
+              Accept: "application/json",
             },
             body: JSON.stringify(rendererPayload),
-            signal: AbortSignal.timeout(48000),
+            signal: AbortSignal.timeout(15000),
           });
 
           if (
@@ -167,7 +333,23 @@ export async function POST(request: Request) {
       }
 
       const contentType = microserviceResponse.headers.get("content-type") || "";
+      if (contentType.includes("application/json")) {
+        const jobData = await microserviceResponse.json().catch(() => ({}));
+        if (jobData?.jobId) {
+          const publicUrl = getPublicRendererUrl(cleanBackendUrl);
+          return NextResponse.json(
+            {
+              success: true,
+              engine: "Render.com / Railway Dedicated Microservice",
+              rendererUrl: publicUrl,
+              ...jobData,
+            },
+            { status: 202 }
+          );
+        }
+      }
 
+      // Compatibilidad si un microservicio antiguo devolviera video/mp4 directo
       if (contentType.includes("video/mp4") || contentType.includes("octet-stream")) {
         const videoBuffer = await microserviceResponse.arrayBuffer();
         const safeFilename = `${videoTitle
@@ -187,12 +369,13 @@ export async function POST(request: Request) {
         });
       }
 
-      const jsonResult = await microserviceResponse.json().catch(() => ({}));
-      return NextResponse.json({
-        success: true,
-        engine: "Render.com / Railway Cloud Engine",
-        ...jsonResult,
-      });
+      return NextResponse.json(
+        {
+          error: "Respuesta inesperada del microservicio de renderizado",
+          fallbackToBrowser: true,
+        },
+        { status: 502 }
+      );
     }
 
     return NextResponse.json(

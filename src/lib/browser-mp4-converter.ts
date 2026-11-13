@@ -5,10 +5,11 @@ import { Muxer, ArrayBufferTarget } from "mp4-muxer";
 export interface BrowserRenderOptions {
   html: string;
   durationSeconds: number;
+  fps?: number;
   width?: number;
   height?: number;
   cleanVideo?: boolean;
-  onProgress?: (percent: number, statusText: string) => void;
+  onProgress?: (percent: number, statusText: string, meta?: { frame: number; totalFrames: number }) => void;
 }
 
 /**
@@ -320,18 +321,24 @@ async function renderFrameToCanvas(
 export async function renderHtmlToMp4InBrowser({
   html,
   durationSeconds = 15,
+  fps = 30,
   width = 1080,
   height = 1920,
   cleanVideo = true,
   onProgress,
 }: BrowserRenderOptions): Promise<Blob> {
   const safeDuration = Math.min(Math.max(Number(durationSeconds) || 15, 1), 120);
-  const outWidth = 540;
-  const outHeight = 960;
-  const fps = safeDuration <= 15 ? 15 : safeDuration <= 30 ? 12 : 10;
-  const totalFrames = Math.max(24, Math.min(240, Math.round(safeDuration * fps)));
+  const safeFps = Math.min(Math.max(Math.round(Number(fps) || 30), 1), 60);
+  const maxDim = Math.max(width, height);
+  const scaleToOut = maxDim > 960 ? 960 / maxDim : 1;
+  const outWidth = Math.max(2, Math.round((width * scaleToOut) / 2) * 2);
+  const outHeight = Math.max(2, Math.round((height * scaleToOut) / 2) * 2);
+  const totalFrames = Math.max(1, Math.round(safeDuration * safeFps));
 
-  onProgress?.(5, "Inicializando motor de renderizado local...");
+  onProgress?.(3, "Inicializando motor local del navegador (esperando fuentes e imágenes)...", {
+    frame: 0,
+    totalFrames,
+  });
 
   // Crear iframe oculto same-origin con dimensiones exactas 1080x1920
   const iframe = document.createElement("iframe");
@@ -419,11 +426,38 @@ export async function renderHtmlToMp4InBrowser({
       });
     } catch {}
 
-    // Esperar a que carguen estilos y fuentes (máximo 800ms)
-    await Promise.race([
-      doc.fonts?.ready || Promise.resolve(),
-      new Promise((r) => setTimeout(r, 800)),
-    ]);
+    // Esperar a que las fuentes estén listas y todas las imágenes estén completamente decodificadas
+    if (doc.fonts?.ready) {
+      await Promise.race([doc.fonts.ready.catch(() => {}), new Promise((r) => setTimeout(r, 4000))]);
+    }
+
+    const images = Array.from(doc.images || []);
+    if (images.length > 0) {
+      await Promise.race([
+        Promise.all(
+          images.map((img) => {
+            if (img.complete) {
+              return typeof img.decode === "function" ? img.decode().catch(() => {}) : Promise.resolve();
+            }
+            return new Promise<void>((resolve) => {
+              img.addEventListener(
+                "load",
+                () => {
+                  if (typeof img.decode === "function") {
+                    img.decode().catch(() => {}).finally(resolve);
+                  } else {
+                    resolve();
+                  }
+                },
+                { once: true }
+              );
+              img.addEventListener("error", () => resolve(), { once: true });
+            });
+          })
+        ),
+        new Promise((r) => setTimeout(r, 4000)),
+      ]);
+    }
     await new Promise((r) => setTimeout(r, 120));
 
     const canvas = document.createElement("canvas");
@@ -466,8 +500,8 @@ export async function renderHtmlToMp4InBrowser({
             codec: c,
             width: outWidth,
             height: outHeight,
-            bitrate: 2_500_000,
-            framerate: fps,
+            bitrate: 4_000_000,
+            framerate: safeFps,
           });
           if (support.supported) {
             selectedCodec = c;
@@ -480,17 +514,16 @@ export async function renderHtmlToMp4InBrowser({
         codec: selectedCodec,
         width: outWidth,
         height: outHeight,
-        bitrate: 2_500_000,
-        framerate: fps,
+        bitrate: 4_000_000,
+        framerate: safeFps,
       });
 
-      const totalDurationMs = safeDuration * 1000;
-      const frameDurationUs = Math.round((safeDuration * 1_000_000) / totalFrames);
+      const frameDurationUs = Math.round(1_000_000 / safeFps);
 
       for (let i = 0; i < totalFrames; i++) {
         if (encoderError) throw encoderError;
 
-        const currentTimeMs = (i / Math.max(1, totalFrames - 1)) * totalDurationMs;
+        const currentTimeMs = (i / safeFps) * 1000;
         await renderFrameToCanvas(doc, win, ctx, outWidth, outHeight, width, height, currentTimeMs);
 
         const timestampUs = Math.round(i * frameDurationUs);
@@ -499,29 +532,32 @@ export async function renderHtmlToMp4InBrowser({
           duration: frameDurationUs,
         });
 
-        encoder.encode(videoFrame, { keyFrame: i % 15 === 0 });
+        encoder.encode(videoFrame, { keyFrame: i % safeFps === 0 });
         videoFrame.close();
 
-        const pct = Math.min(96, Math.round(10 + ((i + 1) / totalFrames) * 85));
-        onProgress?.(pct, `Codificando fotograma ${i + 1} de ${totalFrames}...`);
+        const pct = Math.min(96, Math.round(5 + ((i + 1) / totalFrames) * 90));
+        onProgress?.(pct, `Motor local: fotograma ${i + 1} de ${totalFrames} (${safeFps} FPS)...`, {
+          frame: i + 1,
+          totalFrames,
+        });
 
-        // Ceder el hilo principal cada 4 fotogramas para que la página nunca se trabe
-        if (i % 4 === 0) {
+        // Ceder el hilo principal cada 2 fotogramas para mantener la UI responsiva
+        if (i % 2 === 0) {
           await new Promise((r) => setTimeout(r, 0));
         }
       }
 
-      onProgress?.(98, "Empaquetando archivo MP4...");
+      onProgress?.(98, "Empaquetando archivo MP4...", { frame: totalFrames, totalFrames });
       await encoder.flush();
       encoder.close();
       muxer.finalize();
 
-      onProgress?.(100, "¡Video MP4 listo!");
+      onProgress?.(100, "¡Video MP4 listo!", { frame: totalFrames, totalFrames });
       return new Blob([target.buffer], { type: "video/mp4" });
     }
 
     // Ruta B: Respaldo con MediaRecorder si el navegador no soporta WebCodecs
-    const stream = canvas.captureStream(fps);
+    const stream = canvas.captureStream(safeFps);
     const mimeTypes = [
       "video/mp4;codecs=avc1",
       "video/mp4",
@@ -531,7 +567,7 @@ export async function renderHtmlToMp4InBrowser({
     const supportedMime = mimeTypes.find((m) => MediaRecorder.isTypeSupported(m)) || "";
     const recorder = new MediaRecorder(
       stream,
-      supportedMime ? { mimeType: supportedMime, videoBitsPerSecond: 2_500_000 } : undefined
+      supportedMime ? { mimeType: supportedMime, videoBitsPerSecond: 4_000_000 } : undefined
     );
 
     const chunks: BlobPart[] = [];
@@ -546,18 +582,20 @@ export async function renderHtmlToMp4InBrowser({
     });
 
     recorder.start(100);
-    const totalDurationMs = safeDuration * 1000;
     for (let i = 0; i < totalFrames; i++) {
-      const currentTimeMs = (i / Math.max(1, totalFrames - 1)) * totalDurationMs;
+      const currentTimeMs = (i / safeFps) * 1000;
       await renderFrameToCanvas(doc, win, ctx, outWidth, outHeight, width, height, currentTimeMs);
-      const pct = Math.min(96, Math.round(10 + ((i + 1) / totalFrames) * 85));
-      onProgress?.(pct, `Generando fotograma ${i + 1} de ${totalFrames}...`);
-      await new Promise((r) => setTimeout(r, 25));
+      const pct = Math.min(96, Math.round(5 + ((i + 1) / totalFrames) * 90));
+      onProgress?.(pct, `Motor local: fotograma ${i + 1} de ${totalFrames} (${safeFps} FPS)...`, {
+        frame: i + 1,
+        totalFrames,
+      });
+      await new Promise((r) => setTimeout(r, 16));
     }
 
     recorder.stop();
     const finalBlob = await stopPromise;
-    onProgress?.(100, "¡Video MP4 listo!");
+    onProgress?.(100, "¡Video MP4 listo!", { frame: totalFrames, totalFrames });
     return finalBlob;
   } finally {
     if (iframe.parentNode) {

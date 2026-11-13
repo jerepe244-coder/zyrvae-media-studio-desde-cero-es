@@ -23,6 +23,10 @@ function resolveChromiumPath() {
     "/usr/bin/chromium-browser",
     "/usr/bin/google-chrome-stable",
     "/usr/bin/google-chrome",
+    "C:\\Program Files\\Google\\Chrome\\Application\\chrome.exe",
+    "C:\\Program Files (x86)\\Google\\Chrome\\Application\\chrome.exe",
+    "C:\\Program Files (x86)\\Microsoft\\Edge\\Application\\msedge.exe",
+    "C:\\Program Files\\Microsoft\\Edge\\Application\\msedge.exe",
   ].filter(Boolean);
 
   for (const candidate of candidates) {
@@ -35,12 +39,15 @@ function resolveChromiumPath() {
 
 const FFMPEG_PATH = resolveFfmpegPath();
 
-// Script único de reloj virtual determinista y auto-activación de reproducción para animaciones y video
+// Script único de reloj virtual determinista y sincronización WAAPI + doble rAF real
 const VIRTUAL_CLOCK_SCRIPT = `
 (function() {
   if (window.__virtualClockInitialized) return;
   window.__virtualClockInitialized = true;
   window.__virtualTime = 0;
+
+  var origRAF = window.requestAnimationFrame ? window.requestAnimationFrame.bind(window) : null;
+  var origCancelRAF = window.cancelAnimationFrame ? window.cancelAnimationFrame.bind(window) : null;
 
   var origPerfNow = window.performance ? window.performance.now.bind(window.performance) : null;
   if (origPerfNow) {
@@ -66,10 +73,34 @@ const VIRTUAL_CLOCK_SCRIPT = `
     rafCallbacks.delete(id);
   };
 
+  // Espera dos cuadros reales del compositor (doble rAF nativo) tras posicionar WAAPI
+  window.__waitForDoubleRaf = function() {
+    if (!origRAF) {
+      return new Promise(function(resolve) { setTimeout(resolve, 16); });
+    }
+    return new Promise(function(resolve) {
+      var settled = false;
+      var guard = setTimeout(function() {
+        if (!settled) {
+          settled = true;
+          resolve();
+        }
+      }, 80);
+      origRAF(function() {
+        origRAF(function() {
+          if (!settled) {
+            settled = true;
+            clearTimeout(guard);
+            resolve();
+          }
+        });
+      });
+    });
+  };
+
   // Función de disparo automático para iniciar cualquier video o animación interactiva
   window.__triggerAutoPlay = function() {
     try {
-      // 1. Desmutear y activar reproducción de todas las etiquetas <video> y <audio>
       var medias = document.querySelectorAll('video, audio');
       for (var m = 0; m < medias.length; m++) {
         var media = medias[m];
@@ -82,7 +113,6 @@ const VIRTUAL_CLOCK_SCRIPT = `
         }
       }
 
-      // 2. Simular clic automático en botones de Play / Iniciar / Reproducir
       var playButtons = document.querySelectorAll(
         'button, [role="button"], .play, #play, .play-btn, .btn-play, [aria-label*="play" i], [aria-label*="reproducir" i]'
       );
@@ -92,18 +122,17 @@ const VIRTUAL_CLOCK_SCRIPT = `
         } catch (e) {}
       }
 
-      // 3. Disparar eventos globales para componentes reactivos
       window.dispatchEvent(new Event('play'));
       window.dispatchEvent(new CustomEvent('video-start'));
       document.dispatchEvent(new Event('play'));
     } catch (err) {}
   };
 
-  // Stepper determinista fotograma a fotograma
+  // Stepper determinista fotograma a fotograma mediante Web Animations API + Virtual Clock
   window.__stepVirtualTime = function(newTimeMs) {
     window.__virtualTime = newTimeMs;
 
-    // Ejecutar callbacks de requestAnimationFrame registrados
+    // 1. Ejecutar callbacks de requestAnimationFrame registrados por el código de la escena
     var pending = Array.from(rafCallbacks.entries());
     rafCallbacks.clear();
     for (var i = 0; i < pending.length; i++) {
@@ -112,7 +141,7 @@ const VIRTUAL_CLOCK_SCRIPT = `
       } catch (e) {}
     }
 
-    // Avanzar Web Animations API (CSS Animations / WAAPI)
+    // 2. Posicionar todas las animaciones CSS (@keyframes) y WAAPI con precisión de milisegundos
     if (document.getAnimations) {
       try {
         var animations = document.getAnimations({ subtree: true });
@@ -126,7 +155,7 @@ const VIRTUAL_CLOCK_SCRIPT = `
       } catch (e) {}
     }
 
-    // Sincronizar fotogramas de cualquier etiqueta <video> en el documento
+    // 3. Sincronizar fotogramas de etiquetas <video> si existen
     var videos = document.querySelectorAll('video');
     for (var k = 0; k < videos.length; k++) {
       var v = videos[k];
@@ -142,7 +171,7 @@ const VIRTUAL_CLOCK_SCRIPT = `
       } catch (e) {}
     }
 
-    // Actualizar variables CSS personalizadas
+    // 4. Actualizar variables CSS personalizadas
     if (document.documentElement) {
       try {
         document.documentElement.style.setProperty('--virtual-time', newTimeMs + 'ms');
@@ -150,7 +179,7 @@ const VIRTUAL_CLOCK_SCRIPT = `
       } catch (e) {}
     }
 
-    // Hook personalizado si el script define __seekToTime
+    // 5. Hook personalizado si el script define __seekToTime
     if (typeof window.__seekToTime === "function") {
       try {
         window.__seekToTime(newTimeMs);
@@ -203,8 +232,6 @@ export function sanitizeHtml(rawHtml, width = 1080, height = 1920, cleanVideo = 
     : "";
 
   const hasKeyframes = /@keyframes/i.test(html);
-  // Si el HTML no contiene @keyframes (es decir, el prompt generó un flyer o foto estática),
-  // inyectamos un movimiento cinemático suave (Ken Burns) para que el MP4 jamás salga congelado
   const autoCinematicRules = !hasKeyframes
     ? `
     @keyframes __zyrvae_cinematic_motion {
@@ -332,7 +359,6 @@ export async function getSharedBrowser() {
   return browserLaunchPromise;
 }
 
-// Precalentar el navegador en segundo plano al iniciar el servidor
 export function warmUpBrowser() {
   getSharedBrowser()
     .then(() => console.log("[Renderer] Warm browser listo para renderizar al instante."))
@@ -340,236 +366,99 @@ export function warmUpBrowser() {
 }
 
 /**
- * Motor de renderizado determinista y ultra-rápido de HTML a MP4:
- * 1. Usa el navegador precalentado y mantiene el layout nativo 1080x1920 con escalado eficiente.
- * 2. Captura los fotogramas con presupuesto de tiempo adaptativo para nunca exceder límites de CPU/timeout.
- * 3. Cierra la pestaña de Chromium antes de codificar con FFmpeg para reducir el consumo de RAM a la mitad.
+ * Motor de renderizado determinista cuadro a cuadro sin límites artificiales ni frame-dropping:
+ * 1. Captura exactamente Math.round(safeDuration * safeFps) fotogramas reales en PNG vía CDP.
+ * 2. Posiciona CSS @keyframes y WAAPI con document.getAnimations() + doble requestAnimationFrame real.
+ * 3. Transmite cada fotograma por streaming directo a FFmpeg (libx264, -preset medium, -crf 18) con audio opcional.
  */
 export async function renderHtmlToMp4({
   html,
   duration = 15,
-  fps = 24,
+  fps = 30,
   width = 1080,
   height = 1920,
   cleanVideo = true,
+  audioPath = null,
   outputPath,
   onProgress,
 }) {
   const safeDuration = Math.min(Math.max(Number(duration) || 15, 1), 120);
-  const layoutWidth = Number(width) || 1080;
-  const layoutHeight = Number(height) || 1920;
+  const safeFps = Math.min(Math.max(Math.round(Number(fps) || 30), 1), 60);
+  const layoutWidth = Math.min(Math.max(Math.round(Number(width) || 1080), 200), 3840);
+  const layoutHeight = Math.min(Math.max(Math.round(Number(height) || 1920), 200), 3840);
+  const targetFrames = Math.max(1, Math.round(safeDuration * safeFps));
 
-  // Escala de rasterizado 0.5 (540x960 sobre layout exacto 1080x1920) para máxima velocidad y bajo uso de RAM
-  const scaleFactor = layoutWidth > 720 ? 0.5 : 1;
   const finalHtml = sanitizeHtml(html, layoutWidth, layoutHeight, cleanVideo !== false, safeDuration);
 
   console.log(
-    `[Renderer] Renderizando: layout ${layoutWidth}x${layoutHeight} (scale ${scaleFactor}), duración: ${safeDuration}s, modoLimpio: ${cleanVideo}`
+    `[Renderer] Render determinista: ${layoutWidth}x${layoutHeight}, ${safeDuration}s @ ${safeFps}fps (${targetFrames} cuadros)`
   );
 
   let browser = await getSharedBrowser();
   let page = null;
-  const frameBuffers = [];
-  let targetFrames = Math.min(Math.max(Math.round(safeDuration * Math.min(fps, 15)), 24), 150);
+  let cdp = null;
 
-  try {
-    try {
-      page = await browser.newPage();
-    } catch {
-      // Si la instancia compartida falló, relanzar navegador limpio
-      sharedBrowser = null;
-      browser = await getSharedBrowser();
-      page = await browser.newPage();
-    }
-
-    page.setDefaultNavigationTimeout(8000);
-    page.setDefaultTimeout(8000);
-
-    await page.setViewport({
-      width: layoutWidth,
-      height: layoutHeight,
-      deviceScaleFactor: scaleFactor,
-    });
-
-    await page.evaluateOnNewDocument(VIRTUAL_CLOCK_SCRIPT);
-
-    // Cargar el HTML esperando recursos rápidos (hasta 2.5s máximo) sin fallar si un CDN externo tarda
-    await Promise.race([
-      page.setContent(finalHtml, { waitUntil: "load" }).catch(() => {}),
-      new Promise((r) => setTimeout(r, 2500)),
-    ]);
-
-    // Garantizar que el reloj virtual y el auto-play estén inicializados
-    await page.evaluate(() => {
-      if (typeof window.__triggerAutoPlay === "function") {
-        window.__triggerAutoPlay();
-      }
-    }).catch(() => {});
-
-    // Esperar fuentes listas (máximo 600ms)
-    await Promise.race([
-      page.evaluate(() => document.fonts?.ready).catch(() => {}),
-      new Promise((r) => setTimeout(r, 600)),
-    ]);
-
-    const cdp = await page.createCDPSession();
-
-    // Capturar Frame 0 (calienta el compositor y caché de capas Skia)
-    await page.evaluate(() => {
-      if (typeof window.__stepVirtualTime === "function") {
-        window.__stepVirtualTime(0);
-      }
-    });
-    const firstShot = await cdp.send("Page.captureScreenshot", {
-      format: "jpeg",
-      quality: 80,
-      optimizeForSpeed: true,
-    });
-    const firstFrameBuffer = Buffer.from(firstShot.data, "base64");
-    frameBuffers.push(firstFrameBuffer);
-
-    // Medir tiempo real de captura en Frame 1 (ya con compositor caliente)
-    const tFrame1 = Date.now();
-    const probeMs = Math.min(100, safeDuration * 1000 * 0.02);
-    await page.evaluate(async (timeMs) => {
-      if (typeof window.__stepVirtualTime === "function") {
-        window.__stepVirtualTime(timeMs);
-      }
-      var videos = Array.from(document.querySelectorAll("video"));
-      if (videos.length > 0) {
-        await Promise.race([
-          Promise.all(
-            videos.map(function (v) {
-              return new Promise(function (resolve) {
-                if (v.seeking) {
-                  v.onseeked = function () { resolve(); };
-                  setTimeout(resolve, 35);
-                } else {
-                  resolve();
-                }
-              });
-            })
-          ),
-          new Promise(function (r) { setTimeout(r, 50); }),
-        ]);
-      }
-      void document.body.offsetHeight;
-    }, probeMs);
-    const secondShot = await cdp.send("Page.captureScreenshot", {
-      format: "jpeg",
-      quality: 80,
-      optimizeForSpeed: true,
-    });
-    const secondFrameBuffer = Buffer.from(secondShot.data, "base64");
-    const warmFrameMs = Math.max(12, Date.now() - tFrame1);
-
-    // Presupuesto objetivo de captura de 7.5 segundos para garantizar velocidad y fluidez
-    const captureBudgetMs = 7500;
-    const maxAffordableFrames = Math.floor(captureBudgetMs / warmFrameMs);
-    targetFrames = Math.min(
-      targetFrames,
-      Math.max(36, Math.min(150, maxAffordableFrames))
-    );
-
-    console.log(
-      `[Renderer] Calibración CPU: frame caliente en ${warmFrameMs}ms -> capturando ${targetFrames} fotogramas para ${safeDuration}s`
-    );
-
-    frameBuffers.push(secondFrameBuffer);
-    const loopStartTime = Date.now();
-    const totalDurationMs = safeDuration * 1000;
-
-    for (let i = 2; i < targetFrames; i++) {
-      const elapsedLoopMs = Date.now() - loopStartTime;
-
-      // Si el servidor en la nube sufre throttling severo de CPU (>8s), sub-muestreamos para terminar a tiempo
-      if (elapsedLoopMs > 8000 && i < targetFrames - 1 && i % 2 === 1) {
-        frameBuffers.push(frameBuffers[frameBuffers.length - 1]);
-        continue;
-      }
-
-      const currentMs = (i / Math.max(1, targetFrames - 1)) * totalDurationMs;
-
-      await page.evaluate(async (timeMs) => {
-        if (typeof window.__stepVirtualTime === "function") {
-          window.__stepVirtualTime(timeMs);
-        }
-        var videos = Array.from(document.querySelectorAll("video"));
-        if (videos.length > 0) {
-          await Promise.race([
-            Promise.all(
-              videos.map(function (v) {
-                return new Promise(function (resolve) {
-                  if (v.seeking) {
-                    v.onseeked = function () { resolve(); };
-                    setTimeout(resolve, 35);
-                  } else {
-                    resolve();
-                  }
-                });
-              })
-            ),
-            new Promise(function (r) { setTimeout(r, 50); }),
-          ]);
-        }
-        void document.body.offsetHeight;
-      }, currentMs);
-
-      const shot = await cdp.send("Page.captureScreenshot", {
-        format: "jpeg",
-        quality: 78,
-        optimizeForSpeed: true,
-      });
-
-      frameBuffers.push(Buffer.from(shot.data, "base64"));
-
-      if (onProgress && (i % 15 === 0 || i === targetFrames - 1)) {
-        const percent = Math.round(((i + 1) / targetFrames) * 100);
-        onProgress({
-          frame: i + 1,
-          totalFrames: targetFrames,
-          percent,
-          currentTimeSeconds: (currentMs / 1000).toFixed(1),
-        });
-      }
-    }
-
-    await cdp.detach().catch(() => {});
-  } finally {
-    // Cerrar la página ANTES de lanzar FFmpeg para liberar memoria RAM en contenedores de 512MB
-    if (page) {
-      await page.close().catch(() => {});
-    }
-  }
-
-  // Calcular el framerate exacto para que el archivo MP4 dure exactamente `safeDuration` segundos
-  const effectiveCaptureFps = (frameBuffers.length / safeDuration).toFixed(4);
-
+  const hasAudio = Boolean(audioPath && fs.existsSync(audioPath));
   const ffmpegArgs = [
     "-y",
     "-f", "image2pipe",
-    "-vcodec", "mjpeg",
-    "-framerate", String(effectiveCaptureFps),
+    "-vcodec", "png",
+    "-framerate", String(safeFps),
     "-i", "-",
-    "-r", "24",
-    "-c:v", "libx264",
-    "-preset", "ultrafast",
-    "-crf", "23",
-    "-threads", "2",
-    "-pix_fmt", "yuv420p",
-    "-vf", "scale=trunc(iw/2)*2:trunc(ih/2)*2",
-    "-movflags", "+faststart",
-    outputPath,
   ];
 
+  if (hasAudio) {
+    ffmpegArgs.push("-i", audioPath);
+  }
+
+  ffmpegArgs.push(
+    "-r", String(safeFps),
+    "-c:v", "libx264",
+    "-preset", "medium",
+    "-crf", "18",
+    "-pix_fmt", "yuv420p",
+    "-vf", "scale=trunc(iw/2)*2:trunc(ih/2)*2"
+  );
+
+  if (hasAudio) {
+    ffmpegArgs.push("-shortest", "-c:a", "aac", "-b:a", "192k");
+  }
+
+  ffmpegArgs.push("-movflags", "+faststart", outputPath);
+
   const ffmpegProcess = spawn(FFMPEG_PATH, ffmpegArgs);
+  let stdinClosed = false;
+
   ffmpegProcess.stdin.on("error", (err) => {
-    console.warn("[FFmpeg stdin warning]:", err.message);
+    if (!stdinClosed) {
+      console.warn("[FFmpeg stdin warning]:", err.message);
+    }
   });
 
   let ffmpegErrorLog = "";
+  let encodingStarted = false;
+
   ffmpegProcess.stderr.on("data", (chunk) => {
-    ffmpegErrorLog += chunk.toString();
+    const text = chunk.toString();
+    ffmpegErrorLog += text;
+    if (ffmpegErrorLog.length > 8000) {
+      ffmpegErrorLog = ffmpegErrorLog.slice(-6000);
+    }
+
+    if (encodingStarted && onProgress) {
+      const match = text.match(/frame=\s*(\d+)/);
+      if (match) {
+        const encodedFrame = Math.min(targetFrames, parseInt(match[1], 10));
+        const encPct = Math.min(99, 85 + Math.round((encodedFrame / targetFrames) * 14));
+        onProgress({
+          phase: "encoding",
+          frame: targetFrames,
+          totalFrames: targetFrames,
+          percent: encPct,
+          currentTimeSeconds: safeDuration.toFixed(1),
+        });
+      }
+    }
   });
 
   const ffmpegPromise = new Promise((resolve, reject) => {
@@ -578,7 +467,7 @@ export async function renderHtmlToMp4({
         resolve(true);
       } else {
         reject(
-          new Error(`FFmpeg finalizó con código ${code}: ${ffmpegErrorLog.slice(-400)}`)
+          new Error(`FFmpeg finalizó con código ${code}: ${ffmpegErrorLog.slice(-500)}`)
         );
       }
     });
@@ -587,21 +476,172 @@ export async function renderHtmlToMp4({
     });
   });
 
-  for (const buf of frameBuffers) {
-    if (!ffmpegProcess.stdin.write(buf)) {
-      await new Promise((resolve) => ffmpegProcess.stdin.once("drain", resolve));
+  try {
+    try {
+      page = await browser.newPage();
+    } catch {
+      sharedBrowser = null;
+      browser = await getSharedBrowser();
+      page = await browser.newPage();
+    }
+
+    page.setDefaultNavigationTimeout(15000);
+    page.setDefaultTimeout(15000);
+
+    await page.setViewport({
+      width: layoutWidth,
+      height: layoutHeight,
+      deviceScaleFactor: 1,
+    });
+
+    await page.evaluateOnNewDocument(VIRTUAL_CLOCK_SCRIPT);
+
+    await Promise.race([
+      page.setContent(finalHtml, { waitUntil: "load" }).catch(() => {}),
+      new Promise((r) => setTimeout(r, 4000)),
+    ]);
+
+    await page.evaluate(() => {
+      if (typeof window.__triggerAutoPlay === "function") {
+        window.__triggerAutoPlay();
+      }
+    }).catch(() => {});
+
+    // Esperar fuentes web e imágenes decodificadas antes del cuadro 0
+    await Promise.race([
+      page.evaluate(async () => {
+        if (document.fonts && document.fonts.ready) {
+          await document.fonts.ready.catch(() => {});
+        }
+        const imgs = Array.from(document.images || []);
+        await Promise.all(
+          imgs.map((img) => {
+            if (img.complete) {
+              return typeof img.decode === "function" ? img.decode().catch(() => {}) : Promise.resolve();
+            }
+            return new Promise((resolve) => {
+              img.addEventListener("load", () => {
+                if (typeof img.decode === "function") {
+                  img.decode().catch(() => {}).finally(resolve);
+                } else {
+                  resolve();
+                }
+              }, { once: true });
+              img.addEventListener("error", resolve, { once: true });
+            });
+          })
+        );
+      }).catch(() => {}),
+      new Promise((r) => setTimeout(r, 3500)),
+    ]);
+
+    cdp = await page.createCDPSession();
+
+    for (let i = 0; i < targetFrames; i++) {
+      const currentMs = (i / safeFps) * 1000;
+
+      await page.evaluate(async (timeMs) => {
+        if (typeof window.__stepVirtualTime === "function") {
+          window.__stepVirtualTime(timeMs);
+        }
+        const videos = Array.from(document.querySelectorAll("video"));
+        if (videos.length > 0) {
+          await Promise.race([
+            Promise.all(
+              videos.map((v) => {
+                return new Promise((resolve) => {
+                  if (v.seeking) {
+                    v.onseeked = () => resolve();
+                    setTimeout(resolve, 40);
+                  } else {
+                    resolve();
+                  }
+                });
+              })
+            ),
+            new Promise((r) => setTimeout(r, 60)),
+          ]);
+        }
+        void document.body.offsetHeight;
+        if (typeof window.__waitForDoubleRaf === "function") {
+          await window.__waitForDoubleRaf();
+        }
+      }, currentMs);
+
+      const shot = await cdp.send("Page.captureScreenshot", {
+        format: "png",
+      });
+
+      const frameBuffer = Buffer.from(shot.data, "base64");
+      if (!ffmpegProcess.stdin.write(frameBuffer)) {
+        await new Promise((resolve) => ffmpegProcess.stdin.once("drain", resolve));
+      }
+
+      if (onProgress && (i === 0 || i % 10 === 0 || i === targetFrames - 1)) {
+        const pct = Math.min(85, Math.round(((i + 1) / targetFrames) * 85));
+        onProgress({
+          phase: "capturing",
+          frame: i + 1,
+          totalFrames: targetFrames,
+          percent: pct,
+          currentTimeSeconds: (currentMs / 1000).toFixed(2),
+        });
+      }
+    }
+
+    await cdp.detach().catch(() => {});
+    cdp = null;
+    await page.close().catch(() => {});
+    page = null;
+
+    encodingStarted = true;
+    onProgress?.({
+      phase: "encoding",
+      frame: targetFrames,
+      totalFrames: targetFrames,
+      percent: 87,
+      currentTimeSeconds: safeDuration.toFixed(1),
+    });
+
+    stdinClosed = true;
+    ffmpegProcess.stdin.end();
+    await ffmpegPromise;
+
+    onProgress?.({
+      phase: "done",
+      frame: targetFrames,
+      totalFrames: targetFrames,
+      percent: 100,
+      currentTimeSeconds: safeDuration.toFixed(1),
+    });
+
+    console.log(
+      `[Renderer] ¡Video MP4 generado con éxito!: ${outputPath} (${targetFrames} cuadros @ ${safeFps}fps)`
+    );
+
+    return {
+      success: true,
+      outputPath,
+      duration: safeDuration,
+      fps: safeFps,
+      totalFrames: targetFrames,
+    };
+  } catch (err) {
+    stdinClosed = true;
+    try {
+      ffmpegProcess.stdin.destroy();
+    } catch {}
+    try {
+      ffmpegProcess.kill("SIGKILL");
+    } catch {}
+    await ffmpegPromise.catch(() => {});
+    throw err;
+  } finally {
+    if (cdp) {
+      await cdp.detach().catch(() => {});
+    }
+    if (page) {
+      await page.close().catch(() => {});
     }
   }
-
-  ffmpegProcess.stdin.end();
-  await ffmpegPromise;
-
-  console.log(`[Renderer] ¡Video MP4 generado con éxito!: ${outputPath} (${frameBuffers.length} frames)`);
-  return {
-    success: true,
-    outputPath,
-    duration: safeDuration,
-    fps: Number(effectiveCaptureFps),
-    totalFrames: frameBuffers.length,
-  };
 }
