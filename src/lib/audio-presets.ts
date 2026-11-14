@@ -68,7 +68,8 @@ export const SFX_PRESETS: SfxPreset[] = [
     defaultVolume: 0.95,
     fileName: "impact.mp3",
     previewPath: "/audio/sfx/impact.mp3",
-    sfxPrompt: "Deep punchy cinematic sub bass impact hit, clean commercial sound effect",
+    sfxPrompt:
+      "Deep cinematic sub bass impact hit, clean modern architectural slam, tight low end, dry studio quality, no reverb tail",
   },
   {
     id: "whoosh",
@@ -77,43 +78,48 @@ export const SFX_PRESETS: SfxPreset[] = [
     defaultVolume: 0.85,
     fileName: "whoosh.mp3",
     previewPath: "/audio/sfx/whoosh.mp3",
-    sfxPrompt: "Fast sleek modern UI swipe whoosh transition sound effect",
+    sfxPrompt:
+      "Fast sleek modern UI transition whoosh, crisp filtered air sweep, minimal tech motion design, clean studio",
   },
   {
     id: "ui-click",
     label: "Click UI",
-    durationSec: 0.25,
+    durationSec: 0.5,
     defaultVolume: 0.8,
     fileName: "ui-click.mp3",
     previewPath: "/audio/sfx/ui-click.mp3",
-    sfxPrompt: "Crisp minimal modern software interface tactile click pop",
+    sfxPrompt:
+      "Crisp tactile minimal mouse click and subtle glass UI tap, modern Apple style interface sound, clean dry",
   },
   {
     id: "notification",
     label: "Notificación / Ping",
-    durationSec: 0.6,
+    durationSec: 1.0,
     defaultVolume: 0.85,
     fileName: "notification.mp3",
     previewPath: "/audio/sfx/notification.mp3",
-    sfxPrompt: "Clean bright modern app notification bell chime ping",
+    sfxPrompt:
+      "Modern minimalist digital lead notification chime, two soft warm synth tones, clean luxury tech UI alert",
   },
   {
     id: "riser",
     label: "Riser Ascendente",
-    durationSec: 1.8,
+    durationSec: 2.5,
     defaultVolume: 0.75,
     fileName: "riser.mp3",
     previewPath: "/audio/sfx/riser.mp3",
-    sfxPrompt: "Smooth rising synth tension sweep riser for commercial reveal",
+    sfxPrompt:
+      "Smooth cinematic tension riser, rising clean analog synth sweep building up to a cut, modern tech commercial",
   },
   {
     id: "error-beep",
     label: "Alerta / Error",
-    durationSec: 0.5,
+    durationSec: 0.8,
     defaultVolume: 0.9,
     fileName: "error-beep.mp3",
     previewPath: "/audio/sfx/error-beep.mp3",
-    sfxPrompt: "Short sharp digital system alert warning glitch beep",
+    sfxPrompt:
+      "Short subtle low digital error buzz, muted modern UI warning tone, clean non-harsh tech alert",
   },
 ];
 
