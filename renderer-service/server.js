@@ -127,13 +127,14 @@ function sanitizeJobResponse(job) {
   };
 }
 
-function writeOptionalAudioFile(audioData, audioExt, jobId) {
+function writeOptionalAudioFile(audioData, audioExt, jobId, kind = "audio") {
   if (!audioData || typeof audioData !== "string") return null;
   const cleanedBase64 = audioData.replace(/^data:[^;]+;base64,/, "").trim();
   if (!cleanedBase64) return null;
 
   const ext = String(audioExt || "mp3").toLowerCase().replace(/[^a-z0-9]/g, "") === "wav" ? "wav" : "mp3";
-  const audioPath = path.join(os.tmpdir(), `zyrvae_audio_${jobId}.${ext}`);
+  const safeKind = kind === "voiceover" ? "voiceover" : "audio";
+  const audioPath = path.join(os.tmpdir(), `zyrvae_${safeKind}_${jobId}.${ext}`);
   fs.writeFileSync(audioPath, Buffer.from(cleanedBase64, "base64"));
   return audioPath;
 }
@@ -251,7 +252,11 @@ app.post("/render", async (req, res) => {
       props,
       accentColor,
       audioData,
+      audioBase64,
       audioExt,
+      voiceoverBase64,
+      voiceoverData,
+      voiceoverExt,
       async: asyncFlag,
     } = req.body || {};
 
@@ -297,9 +302,22 @@ app.post("/render", async (req, res) => {
     const jobId = crypto.randomUUID();
     const outputPath = path.join(os.tmpdir(), `zyrvae_${jobId}.mp4`);
     let audioPath = null;
+    let voiceoverPath = null;
     try {
-      audioPath = writeOptionalAudioFile(audioData, audioExt, jobId);
+      audioPath = writeOptionalAudioFile(audioBase64 || audioData, audioExt, jobId, "audio");
+      voiceoverPath = writeOptionalAudioFile(
+        voiceoverBase64 || voiceoverData,
+        voiceoverExt || "mp3",
+        jobId,
+        "voiceover"
+      );
     } catch (audioErr) {
+      if (audioPath && fs.existsSync(audioPath)) {
+        fs.unlink(audioPath, () => {});
+      }
+      if (voiceoverPath && fs.existsSync(voiceoverPath)) {
+        fs.unlink(voiceoverPath, () => {});
+      }
       return res.status(400).json({
         error: "Audio inválido",
         message: audioErr instanceof Error ? audioErr.message : "No se pudo procesar el archivo de audio.",
@@ -344,6 +362,7 @@ app.post("/render", async (req, res) => {
           height: safeHeight,
           cleanVideo: cleanVideo !== false,
           audioPath,
+          voiceoverPath,
           outputPath,
           onProgress: (p) => {
             job.status = p.phase === "encoding" ? "encoding" : p.phase === "done" ? "done" : "capturing";
@@ -384,6 +403,9 @@ app.post("/render", async (req, res) => {
       } finally {
         if (audioPath && fs.existsSync(audioPath)) {
           fs.unlink(audioPath, () => {});
+        }
+        if (voiceoverPath && fs.existsSync(voiceoverPath)) {
+          fs.unlink(voiceoverPath, () => {});
         }
       }
     };

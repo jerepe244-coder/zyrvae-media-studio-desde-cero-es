@@ -379,6 +379,7 @@ export async function renderHtmlToMp4({
   height = 1920,
   cleanVideo = true,
   audioPath = null,
+  voiceoverPath = null,
   outputPath,
   onProgress,
 }) {
@@ -398,7 +399,8 @@ export async function renderHtmlToMp4({
   let page = null;
   let cdp = null;
 
-  const hasAudio = Boolean(audioPath && fs.existsSync(audioPath));
+  const hasMusic = Boolean(audioPath && fs.existsSync(audioPath));
+  const hasVoiceover = Boolean(voiceoverPath && fs.existsSync(voiceoverPath));
   const ffmpegArgs = [
     "-y",
     "-f", "image2pipe",
@@ -407,8 +409,11 @@ export async function renderHtmlToMp4({
     "-i", "-",
   ];
 
-  if (hasAudio) {
+  if (hasMusic) {
     ffmpegArgs.push("-i", audioPath);
+  }
+  if (hasVoiceover) {
+    ffmpegArgs.push("-i", voiceoverPath);
   }
 
   ffmpegArgs.push(
@@ -420,7 +425,17 @@ export async function renderHtmlToMp4({
     "-vf", "scale=trunc(iw/2)*2:trunc(ih/2)*2"
   );
 
-  if (hasAudio) {
+  if (hasMusic && hasVoiceover) {
+    ffmpegArgs.push(
+      "-filter_complex",
+      "[1:a]volume=0.22[bg];[2:a]volume=1.0[vo];[bg][vo]amix=inputs=2:duration=shortest:dropout_transition=2[aout]",
+      "-map", "0:v:0",
+      "-map", "[aout]",
+      "-c:a", "aac",
+      "-b:a", "192k",
+      "-shortest"
+    );
+  } else if (hasMusic || hasVoiceover) {
     ffmpegArgs.push("-shortest", "-c:a", "aac", "-b:a", "192k");
   }
 

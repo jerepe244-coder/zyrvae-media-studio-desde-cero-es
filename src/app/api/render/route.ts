@@ -228,15 +228,35 @@ export async function POST(request: Request) {
       height,
       cleanVideo,
       audioData,
+      audioBase64,
       audioExt,
+      voiceoverBase64,
+      voiceoverData,
+      voiceoverExt,
     } = body || {};
 
-    if (typeof audioData === "string" && audioData.length > MAX_VERCEL_AUDIO_BASE64_CHARS) {
+    const resolvedAudioBase64 =
+      typeof audioBase64 === "string"
+        ? audioBase64
+        : typeof audioData === "string"
+          ? audioData
+          : "";
+    const resolvedVoiceoverBase64 =
+      typeof voiceoverBase64 === "string"
+        ? voiceoverBase64
+        : typeof voiceoverData === "string"
+          ? voiceoverData
+          : "";
+
+    if (
+      resolvedAudioBase64.length + resolvedVoiceoverBase64.length >
+      MAX_VERCEL_AUDIO_BASE64_CHARS
+    ) {
       return NextResponse.json(
         {
-          error: "Audio demasiado pesado para el proxy de Vercel",
+          error: "Audio combinado demasiado pesado para el proxy de Vercel",
           message:
-            "El audio supera ~3.5 MB. Usá un archivo .mp3 comprimido (< 3.5 MB) o conexión directa con el microservicio.",
+            "La suma de música y voz en off supera ~3.5 MB (límite 4.5 MB de Vercel). Usá un .mp3 más liviano o conexión directa con el microservicio.",
         },
         { status: 413 }
       );
@@ -264,8 +284,10 @@ export async function POST(request: Request) {
         height: Number(height) || 1920,
         cleanVideo: cleanVideo !== false,
         accentColor: selectedColor,
-        audioData: audioData || null,
+        audioData: resolvedAudioBase64 || null,
         audioExt: audioExt || null,
+        voiceoverBase64: resolvedVoiceoverBase64 || null,
+        voiceoverExt: voiceoverExt || (resolvedVoiceoverBase64 ? "mp3" : null),
         async: true,
         props: {
           title: videoTitle,

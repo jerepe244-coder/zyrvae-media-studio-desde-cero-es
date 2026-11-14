@@ -27,6 +27,9 @@ import {
   Eye,
   EyeOff,
   Music,
+  Mic,
+  Volume2,
+  Square,
   X,
 } from "lucide-react";
 
@@ -148,6 +151,32 @@ export default function StudioPage() {
     ext: "mp3" | "wav";
     sizeBytes: number;
     base64: string;
+  } | null>(null);
+
+  // Voz en Off con ElevenLabs
+  const previewAudioRef = React.useRef<HTMLAudioElement | null>(null);
+  const [elevenVoices, setElevenVoices] = React.useState<
+    Array<{
+      voice_id: string;
+      name: string;
+      category?: string;
+      labels?: Record<string, string>;
+      preview_url?: string | null;
+    }>
+  >([]);
+  const [voicesLoading, setVoicesLoading] = React.useState<boolean>(true);
+  const [ttsConfigured, setTtsConfigured] = React.useState<boolean>(true);
+  const [voicesError, setVoicesError] = React.useState<string | null>(null);
+  const [selectedVoiceId, setSelectedVoiceId] = React.useState<string>("");
+  const [ttsText, setTtsText] = React.useState<string>("");
+  const [isGeneratingVoice, setIsGeneratingVoice] = React.useState<boolean>(false);
+  const [ttsError, setTtsError] = React.useState<string | null>(null);
+  const [isPreviewPlaying, setIsPreviewPlaying] = React.useState<boolean>(false);
+  const [voiceoverAudio, setVoiceoverAudio] = React.useState<{
+    base64: string;
+    sizeBytes: number;
+    voiceName: string;
+    dataUrl: string;
   } | null>(null);
 
   // Estado del código HTML y versión debounced para el visor
@@ -436,6 +465,117 @@ export default function StudioPage() {
     return { url, filename };
   };
 
+  // Cargar voces disponibles de ElevenLabs al montar (GET /api/tts)
+  React.useEffect(() => {
+    let active = true;
+    const loadVoices = async () => {
+      try {
+        const res = await fetch("/api/tts", { cache: "no-store" });
+        const data = await res.json().catch(() => null);
+        if (!active) return;
+
+        if (res.status === 503 || data?.configured === false) {
+          setTtsConfigured(false);
+          setVoicesError(data?.error || "ELEVENLABS_API_KEY no configurada.");
+          return;
+        }
+
+        if (!res.ok || !Array.isArray(data?.voices)) {
+          setVoicesError(data?.error || "No se pudieron cargar las voces de ElevenLabs.");
+          return;
+        }
+
+        setTtsConfigured(true);
+        setVoicesError(null);
+        setElevenVoices(data.voices);
+        if (data.voices.length > 0) {
+          setSelectedVoiceId((prev) => prev || data.voices[0].voice_id);
+        }
+      } catch {
+        if (active) {
+          setVoicesError("No se pudo conectar con /api/tts.");
+        }
+      } finally {
+        if (active) {
+          setVoicesLoading(false);
+        }
+      }
+    };
+
+    loadVoices();
+
+    return () => {
+      active = false;
+      if (previewAudioRef.current) {
+        previewAudioRef.current.pause();
+        previewAudioRef.current = null;
+      }
+    };
+  }, []);
+
+  const selectedVoiceObj = React.useMemo(
+    () => elevenVoices.find((v) => v.voice_id === selectedVoiceId) || null,
+    [elevenVoices, selectedVoiceId]
+  );
+
+  const combinedAudioBytes = (audioFile?.sizeBytes || 0) + (voiceoverAudio?.sizeBytes || 0);
+
+  const handlePreviewVoice = () => {
+    const previewUrl = selectedVoiceObj?.preview_url;
+    if (!previewUrl) return;
+
+    if (previewAudioRef.current) {
+      previewAudioRef.current.pause();
+      previewAudioRef.current = null;
+      if (isPreviewPlaying) {
+        setIsPreviewPlaying(false);
+        return;
+      }
+    }
+
+    const audio = new Audio(previewUrl);
+    previewAudioRef.current = audio;
+    setIsPreviewPlaying(true);
+    audio.onended = () => setIsPreviewPlaying(false);
+    audio.onerror = () => setIsPreviewPlaying(false);
+    audio.play().catch(() => setIsPreviewPlaying(false));
+  };
+
+  const handleGenerateVoiceover = async () => {
+    const cleanText = ttsText.trim();
+    if (!cleanText || !selectedVoiceId || isGeneratingVoice) return;
+
+    setIsGeneratingVoice(true);
+    setTtsError(null);
+    try {
+      const res = await fetch("/api/tts", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          text: cleanText,
+          voiceId: selectedVoiceId,
+          stability: 0.5,
+          similarityBoost: 0.75,
+        }),
+      });
+      const data = await res.json().catch(() => null);
+      if (!res.ok || !data?.base64) {
+        throw new Error(data?.error || "No se pudo generar la locución.");
+      }
+
+      setVoiceoverAudio({
+        base64: data.base64,
+        sizeBytes: typeof data.sizeBytes === "number" ? data.sizeBytes : Math.round((data.base64.length * 3) / 4),
+        voiceName: selectedVoiceObj?.name || "Voz ElevenLabs",
+        dataUrl: `data:audio/mpeg;base64,${data.base64}`,
+      });
+    } catch (err: unknown) {
+      setTtsError(err instanceof Error ? err.message : "Error generando voz en off.");
+    } finally {
+      setIsGeneratingVoice(false);
+    }
+  };
+
   // Cargar pista de audio opcional (.mp3 / .wav) — límite 3.5 MB para respetar el tope de 4.5 MB en Vercel
   const handleAudioFileChange = (e: React.ChangeEvent<HTMLInputElement>) => {
     const file = e.target.files?.[0];
@@ -497,6 +637,8 @@ export default function StudioPage() {
       cleanVideo: cleanVideoMode,
       audioData: audioFile?.base64 || null,
       audioExt: audioFile?.ext || null,
+      voiceoverBase64: voiceoverAudio?.base64 || null,
+      voiceoverExt: voiceoverAudio ? "mp3" : null,
       async: true,
     };
 
@@ -626,6 +768,15 @@ export default function StudioPage() {
 
       // ETAPA 2: Proxy API (/api/render) con trabajo asíncrono + polling
       if (!mp4Blob) {
+        const proxyAudioBase64Chars =
+          (audioFile?.base64.length || 0) + (voiceoverAudio?.base64.length || 0);
+        const MAX_PROXY_AUDIO_CHARS = Math.ceil(3.5 * 1024 * 1024 * 1.37);
+        if (proxyAudioBase64Chars > MAX_PROXY_AUDIO_CHARS) {
+          throw new Error(
+            "La suma de música y voz en off supera el límite de 3.5 MB del proxy Vercel. Usá una pista .mp3 más liviana o conectá directamente con el renderer-service."
+          );
+        }
+
         let proxyPayloadTooLargeMessage: string | null = null;
         try {
           setProgressStatus("Conectando vía API proxy de estudio...");
@@ -1295,12 +1446,165 @@ export default function StudioPage() {
                 </div>
                 {audioFile ? (
                   <p className="text-[11px] font-mono text-emerald-300 truncate">
-                    ✓ {audioFile.name} ({(audioFile.sizeBytes / (1024 * 1024)).toFixed(2)} MB) — Mezcla AAC 192k (-shortest)
+                    ✓ {audioFile.name} ({(audioFile.sizeBytes / (1024 * 1024)).toFixed(2)} MB) — {voiceoverAudio ? "Música al 22% bajo voz (AAC 192k)" : "Mezcla AAC 192k (-shortest)"}
                   </p>
                 ) : (
                   <p className="text-[11px] text-zinc-500">
-                    Opcional (máx. 3.5 MB · recomendado .mp3 en lugar de .wav): música o locución mezclada en FFmpeg.
+                    Opcional (máx. 3.5 MB · recomendado .mp3 en lugar de .wav): música de fondo mezclada en FFmpeg.
                   </p>
+                )}
+              </div>
+
+              {/* Voz en Off con ElevenLabs */}
+              <div className="p-3 rounded-xl bg-zinc-950/60 border border-zinc-800/80 space-y-2.5">
+                <div className="flex items-center justify-between gap-2">
+                  <div className="flex items-center gap-2 text-xs">
+                    <Mic className="h-3.5 w-3.5 text-fuchsia-400 shrink-0" />
+                    <span className="font-semibold text-zinc-200">
+                      Voz en Off (ElevenLabs)
+                    </span>
+                  </div>
+                  {voiceoverAudio && (
+                    <button
+                      type="button"
+                      disabled={isLoading || isGeneratingVoice}
+                      onClick={() => setVoiceoverAudio(null)}
+                      className="inline-flex items-center gap-1 px-2 py-1 rounded-lg text-[11px] bg-red-500/15 text-red-300 border border-red-500/30 hover:bg-red-500/25 transition-colors"
+                    >
+                      <X className="h-3 w-3" />
+                      Quitar voz
+                    </button>
+                  )}
+                </div>
+
+                {!ttsConfigured ? (
+                  <p className="text-[11px] text-amber-300/90 leading-relaxed">
+                    Configurá <code className="text-amber-200">ELEVENLABS_API_KEY</code> en el entorno del servidor para habilitar la locución IA sin exponer la clave en el navegador.
+                  </p>
+                ) : (
+                  <>
+                    <div className="flex items-center gap-2">
+                      <select
+                        value={selectedVoiceId}
+                        disabled={isLoading || isGeneratingVoice || voicesLoading || elevenVoices.length === 0}
+                        onChange={(e) => {
+                          setSelectedVoiceId(e.target.value);
+                          if (previewAudioRef.current) {
+                            previewAudioRef.current.pause();
+                            setIsPreviewPlaying(false);
+                          }
+                        }}
+                        className="flex-1 min-w-0 h-8 px-2.5 rounded-lg bg-zinc-900 border border-zinc-700 text-xs text-zinc-100 focus:outline-none focus:ring-1 focus:ring-fuchsia-500"
+                      >
+                        {voicesLoading ? (
+                          <option value="">Cargando voces...</option>
+                        ) : elevenVoices.length === 0 ? (
+                          <option value="">Sin voces disponibles</option>
+                        ) : (
+                          elevenVoices.map((voice) => {
+                            const accent = voice.labels?.accent || voice.labels?.language || voice.category || "";
+                            return (
+                              <option key={voice.voice_id} value={voice.voice_id}>
+                                {voice.name}{accent ? ` (${accent})` : ""}
+                              </option>
+                            );
+                          })
+                        )}
+                      </select>
+
+                      <Button
+                        type="button"
+                        size="sm"
+                        variant="outline"
+                        disabled={!selectedVoiceObj?.preview_url || isLoading}
+                        onClick={handlePreviewVoice}
+                        title="Escuchar muestra gratuita de ElevenLabs sin gastar créditos"
+                        className="h-8 px-2.5 text-[11px] border-zinc-700 bg-zinc-900 hover:bg-zinc-800 text-zinc-200 shrink-0"
+                      >
+                        {isPreviewPlaying ? (
+                          <>
+                            <Square className="h-3 w-3 mr-1 text-fuchsia-400" />
+                            Parar
+                          </>
+                        ) : (
+                          <>
+                            <Volume2 className="h-3.5 w-3.5 mr-1 text-fuchsia-400" />
+                            Preview
+                          </>
+                        )}
+                      </Button>
+                    </div>
+
+                    <div className="space-y-1">
+                      <textarea
+                        rows={3}
+                        maxLength={3000}
+                        disabled={isLoading || isGeneratingVoice}
+                        value={ttsText}
+                        onChange={(e) => setTtsText(e.target.value)}
+                        placeholder="Escribí acá el guion de la locución para tu anuncio..."
+                        className="w-full px-2.5 py-2 rounded-lg bg-zinc-900 border border-zinc-800 text-xs text-zinc-100 placeholder:text-zinc-500 focus:outline-none focus:ring-1 focus:ring-fuchsia-500 resize-y"
+                      />
+                      <div className="flex items-center justify-between text-[10px] text-zinc-500">
+                        <span>Modelo: eleven_multilingual_v2 · MP3 128kbps</span>
+                        <span className={ttsText.length > 2800 ? "text-amber-300 font-mono" : "font-mono"}>
+                          {ttsText.length} / 3000
+                        </span>
+                      </div>
+                    </div>
+
+                    {voicesError && (
+                      <p className="text-[11px] text-amber-300">{voicesError}</p>
+                    )}
+                    {ttsError && (
+                      <p className="text-[11px] text-red-400">{ttsError}</p>
+                    )}
+
+                    <Button
+                      type="button"
+                      size="sm"
+                      disabled={isLoading || isGeneratingVoice || !ttsText.trim() || !selectedVoiceId}
+                      onClick={handleGenerateVoiceover}
+                      className="w-full h-8 text-xs font-medium bg-fuchsia-600/90 hover:bg-fuchsia-500 text-white"
+                    >
+                      {isGeneratingVoice ? (
+                        <>
+                          <Loader2 className="h-3.5 w-3.5 mr-1.5 animate-spin" />
+                          Sintetizando voz...
+                        </>
+                      ) : voiceoverAudio ? (
+                        <>
+                          <Mic className="h-3.5 w-3.5 mr-1.5" />
+                          Regenerar Voz en Off
+                        </>
+                      ) : (
+                        <>
+                          <Mic className="h-3.5 w-3.5 mr-1.5" />
+                          Generar Voz en Off
+                        </>
+                      )}
+                    </Button>
+
+                    {voiceoverAudio && (
+                      <div className="space-y-1.5 pt-1">
+                        <audio
+                          controls
+                          src={voiceoverAudio.dataUrl}
+                          className="w-full h-8"
+                        />
+                        <p className="text-[11px] font-mono text-fuchsia-300 truncate">
+                          ✓ Voz lista ({voiceoverAudio.voiceName} · {(voiceoverAudio.sizeBytes / 1024).toFixed(0)} KB)
+                          {audioFile ? " — Se mezclará con música al 22%" : ""}
+                        </p>
+                      </div>
+                    )}
+
+                    {combinedAudioBytes > 3.5 * 1024 * 1024 && (
+                      <p className="text-[11px] text-amber-300 leading-relaxed">
+                        Aviso: música + voz suman {(combinedAudioBytes / (1024 * 1024)).toFixed(2)} MB (&gt; 3.5 MB). Si se usa el proxy de Vercel en vez de conexión directa al renderer-service, podría exceder el límite de 4.5 MB.
+                      </p>
+                    )}
+                  </>
                 )}
               </div>
 
