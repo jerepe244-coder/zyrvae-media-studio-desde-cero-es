@@ -18,12 +18,14 @@
     "framer-motion": "^14.9.1",
     "googleapis": "^189.0.0",
     "lucide-react": "^1.68.0",
+    "mcp-handler": "^2.4.0",
     "mp4-muxer": "^5.2.2",
     "next": "16.4.5",
     "react": "19.3.0",
     "react-dom": "19.3.0",
     "remotion": "^4.0.540",
-    "tailwind-merge": "^3.7.0"
+    "tailwind-merge": "^3.7.0",
+    "zod": "^4.6.7"
   },
   "devDependencies": {
     "@tailwindcss/turbopack": "^4",
