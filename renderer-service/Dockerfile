@@ -24,7 +24,8 @@ WORKDIR /app
 COPY package.json package-lock.json* ./
 RUN npm install --omit=dev --no-audit --no-fund
 
-# Copiar el código fuente del microservicio
+# Copiar activos de audio y código fuente del microservicio
+COPY assets ./assets
 COPY . .
 
 # Exponer el puerto

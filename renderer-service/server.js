@@ -6,6 +6,7 @@ import os from "node:os";
 import crypto from "node:crypto";
 import { renderHtmlToMp4, warmUpBrowser } from "./engine.js";
 import { generateCommercialHtml } from "./templates/commercial.js";
+import { resolveMusicPresetPath, resolveSfxPresetPath } from "./audio-presets.js";
 
 const app = express();
 const PORT = process.env.PORT || 8080;
@@ -64,6 +65,7 @@ setInterval(() => {
 
 const DEFAULT_ALLOWED_ORIGINS = new Set([
   "https://zyrvae-media-studio.vercel.app",
+  "https://zyrvae-media-studio-desde-cero-es-omega.vercel.app",
   "http://localhost:3000",
   "http://127.0.0.1:3000",
 ]);
@@ -254,9 +256,11 @@ app.post("/render", async (req, res) => {
       audioData,
       audioBase64,
       audioExt,
+      musicPresetId,
       voiceoverBase64,
       voiceoverData,
       voiceoverExt,
+      sfxEvents,
       async: asyncFlag,
     } = req.body || {};
 
@@ -303,21 +307,76 @@ app.post("/render", async (req, res) => {
     const outputPath = path.join(os.tmpdir(), `zyrvae_${jobId}.mp4`);
     let audioPath = null;
     let voiceoverPath = null;
+    const sfxItems = [];
+    const tempAudioFiles = [];
+
+    const cleanupTempAudioFiles = () => {
+      for (const tempPath of tempAudioFiles) {
+        if (tempPath && fs.existsSync(tempPath)) {
+          fs.unlink(tempPath, () => {});
+        }
+      }
+    };
+
     try {
-      audioPath = writeOptionalAudioFile(audioBase64 || audioData, audioExt, jobId, "audio");
+      const uploadedMusicPath = writeOptionalAudioFile(
+        audioBase64 || audioData,
+        audioExt,
+        jobId,
+        "audio"
+      );
+      if (uploadedMusicPath) {
+        audioPath = uploadedMusicPath;
+        tempAudioFiles.push(uploadedMusicPath);
+      } else if (musicPresetId) {
+        const presetMusicPath = resolveMusicPresetPath(musicPresetId);
+        if (presetMusicPath) {
+          audioPath = presetMusicPath;
+        } else {
+          console.warn(`[Job ${jobId}] Preset de música no disponible en disco: ${musicPresetId}`);
+        }
+      }
+
       voiceoverPath = writeOptionalAudioFile(
         voiceoverBase64 || voiceoverData,
         voiceoverExt || "mp3",
         jobId,
         "voiceover"
       );
+      if (voiceoverPath) {
+        tempAudioFiles.push(voiceoverPath);
+      }
+
+      if (Array.isArray(sfxEvents)) {
+        sfxEvents.slice(0, 24).forEach((ev, idx) => {
+          if (!ev || typeof ev !== "object") return;
+          const timeSec = Number(ev.timeSec);
+          if (!Number.isFinite(timeSec) || timeSec < 0 || timeSec >= safeDuration) return;
+
+          const volume = Math.min(1.5, Math.max(0.05, Number(ev.volume) || 0.85));
+          if (ev.customBase64 && typeof ev.customBase64 === "string") {
+            const sfxTempPath = writeOptionalAudioFile(
+              ev.customBase64,
+              ev.ext || "mp3",
+              `${jobId}_sfx_${idx}`,
+              "audio"
+            );
+            if (sfxTempPath) {
+              tempAudioFiles.push(sfxTempPath);
+              sfxItems.push({ path: sfxTempPath, timeSec, volume });
+            }
+          } else if (ev.id) {
+            const presetSfxPath = resolveSfxPresetPath(ev.id);
+            if (presetSfxPath) {
+              sfxItems.push({ path: presetSfxPath, timeSec, volume });
+            } else {
+              console.warn(`[Job ${jobId}] SFX no disponible en disco: ${ev.id}`);
+            }
+          }
+        });
+      }
     } catch (audioErr) {
-      if (audioPath && fs.existsSync(audioPath)) {
-        fs.unlink(audioPath, () => {});
-      }
-      if (voiceoverPath && fs.existsSync(voiceoverPath)) {
-        fs.unlink(voiceoverPath, () => {});
-      }
+      cleanupTempAudioFiles();
       return res.status(400).json({
         error: "Audio inválido",
         message: audioErr instanceof Error ? audioErr.message : "No se pudo procesar el archivo de audio.",
@@ -363,6 +422,7 @@ app.post("/render", async (req, res) => {
           cleanVideo: cleanVideo !== false,
           audioPath,
           voiceoverPath,
+          sfxItems,
           outputPath,
           onProgress: (p) => {
             job.status = p.phase === "encoding" ? "encoding" : p.phase === "done" ? "done" : "capturing";
@@ -401,12 +461,7 @@ app.post("/render", async (req, res) => {
           fs.unlink(outputPath, () => {});
         }
       } finally {
-        if (audioPath && fs.existsSync(audioPath)) {
-          fs.unlink(audioPath, () => {});
-        }
-        if (voiceoverPath && fs.existsSync(voiceoverPath)) {
-          fs.unlink(voiceoverPath, () => {});
-        }
+        cleanupTempAudioFiles();
       }
     };
 

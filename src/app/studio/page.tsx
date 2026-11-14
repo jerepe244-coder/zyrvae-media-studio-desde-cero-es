@@ -30,6 +30,8 @@ import {
   Mic,
   Volume2,
   Square,
+  Plus,
+  Wand2,
   X,
 } from "lucide-react";
 
@@ -54,6 +56,14 @@ import {
 import { renderHtmlToMp4InBrowser } from "@/lib/browser-mp4-converter";
 import { TEMPLATES, AdTemplate, getTemplateById } from "@/lib/templates";
 import { saveProject, getSavedProjectById } from "@/lib/user-library";
+import {
+  MUSIC_PRESETS,
+  SFX_PRESETS,
+  SfxEvent,
+  getMusicPresetById,
+  getSfxPresetById,
+  parseSfxFromHtml,
+} from "@/lib/audio-presets";
 
 const DEFAULT_RENDERER_URL =
   process.env.NEXT_PUBLIC_RENDERER_URL || "https://zyrvae-video-renderer.onrender.com";
@@ -115,6 +125,11 @@ REGLAS TÉCNICAS OBLIGATORIAS PARA EL RENDERIZADO:
      }
    - Esto evita barras de desplazamiento (scroll) o desbordes en el video MP4 final.
 
+6. EFECTOS DE SONIDO (SFX) SINCRONIZADOS (OPCIONAL):
+   - Para disparar efectos de sonido automáticos al compás de las transiciones en FFmpeg, incluí dentro del <head> una etiqueta meta estándar con formato <id>@<segundos> (y volumen opcional @<0.1-1.0>):
+     <meta name="zyrvae-sfx" content="impact@2.0, ui-click@11.5, whoosh@15.0@0.8">
+   - IDs disponibles: impact, whoosh, ui-click, notification, riser, error-beep.
+
 ============================================================
 INFORMACIÓN CREATIVA DEL ANUNCIO (TOTALMENTE A TU ELECCIÓN):
 Pega o describe aquí lo que deseas que contenga tu anuncio:
@@ -144,14 +159,32 @@ export default function StudioPage() {
   const [showSafeZones, setShowSafeZones] = React.useState<boolean>(false);
   const [htmlTitle, setHtmlTitle] = React.useState<string>("Comercial_ZYRVAE");
 
-  // Pista de audio opcional (.mp3 / .wav)
+  // Pista de música opcional (.mp3 / .wav o preset integrado)
   const audioInputRef = React.useRef<HTMLInputElement>(null);
+  const previewMusicRef = React.useRef<HTMLAudioElement | null>(null);
+  const [selectedMusicPresetId, setSelectedMusicPresetId] = React.useState<string>("");
+  const [isMusicPreviewPlaying, setIsMusicPreviewPlaying] = React.useState<boolean>(false);
+  const [musicAvailability, setMusicAvailability] = React.useState<Record<string, boolean>>({});
+  const [sfxAvailability, setSfxAvailability] = React.useState<Record<string, boolean>>({});
   const [audioFile, setAudioFile] = React.useState<{
     name: string;
     ext: "mp3" | "wav";
     sizeBytes: number;
     base64: string;
   } | null>(null);
+
+  // Efectos de Sonido (SFX) sincronizados por timestamp
+  const [sfxEvents, setSfxEvents] = React.useState<SfxEvent[]>(() =>
+    parseSfxFromHtml(createSampleAdHtml(15))
+  );
+  const lastParsedSfxSigRef = React.useRef<string>(
+    JSON.stringify(parseSfxFromHtml(createSampleAdHtml(15)))
+  );
+  const [newSfxId, setNewSfxId] = React.useState<string>("impact");
+  const [newSfxTime, setNewSfxTime] = React.useState<string>("2.0");
+  const [customSfxPrompt, setCustomSfxPrompt] = React.useState<string>("");
+  const [isGeneratingSfx, setIsGeneratingSfx] = React.useState<boolean>(false);
+  const [sfxError, setSfxError] = React.useState<string | null>(null);
 
   // Voz en Off con ElevenLabs
   const previewAudioRef = React.useRef<HTMLAudioElement | null>(null);
@@ -340,10 +373,16 @@ export default function StudioPage() {
     return `${cleanStyle}${debouncedHtml}`;
   }, [debouncedHtml, cleanVideoMode, durationSeconds]);
 
-  // Debounce del HTML para la vista previa
+  // Debounce del HTML para la vista previa y sincronización automática de SFX declarados en HTML
   React.useEffect(() => {
     const timer = setTimeout(() => {
       setDebouncedHtml(htmlCode);
+      const parsedFromHtml = parseSfxFromHtml(htmlCode);
+      const nextSig = JSON.stringify(parsedFromHtml);
+      if (nextSig !== lastParsedSfxSigRef.current) {
+        lastParsedSfxSigRef.current = nextSig;
+        setSfxEvents(parsedFromHtml);
+      }
     }, 350);
     return () => clearTimeout(timer);
   }, [htmlCode]);
@@ -465,9 +504,21 @@ export default function StudioPage() {
     return { url, filename };
   };
 
-  // Cargar voces disponibles de ElevenLabs al montar (GET /api/tts)
+  // Cargar voces disponibles de ElevenLabs (GET /api/tts) y disponibilidad de presets locales
   React.useEffect(() => {
     let active = true;
+
+    const loadAudioAvailability = async () => {
+      try {
+        const res = await fetch("/api/audio-presets", { cache: "no-store" });
+        const data = await res.json().catch(() => null);
+        if (active && res.ok && data) {
+          if (data.musicAvailability) setMusicAvailability(data.musicAvailability);
+          if (data.sfxAvailability) setSfxAvailability(data.sfxAvailability);
+        }
+      } catch {}
+    };
+
     const loadVoices = async () => {
       try {
         const res = await fetch("/api/tts", { cache: "no-store" });
@@ -502,6 +553,7 @@ export default function StudioPage() {
       }
     };
 
+    loadAudioAvailability();
     loadVoices();
 
     return () => {
@@ -509,6 +561,10 @@ export default function StudioPage() {
       if (previewAudioRef.current) {
         previewAudioRef.current.pause();
         previewAudioRef.current = null;
+      }
+      if (previewMusicRef.current) {
+        previewMusicRef.current.pause();
+        previewMusicRef.current = null;
       }
     };
   }, []);
@@ -518,7 +574,105 @@ export default function StudioPage() {
     [elevenVoices, selectedVoiceId]
   );
 
-  const combinedAudioBytes = (audioFile?.sizeBytes || 0) + (voiceoverAudio?.sizeBytes || 0);
+  const selectedMusicPresetObj = React.useMemo(
+    () => (selectedMusicPresetId ? getMusicPresetById(selectedMusicPresetId) || null : null),
+    [selectedMusicPresetId]
+  );
+
+  const combinedAudioBytes =
+    (audioFile?.sizeBytes || 0) +
+    (voiceoverAudio?.sizeBytes || 0) +
+    sfxEvents.reduce(
+      (sum, ev) => sum + (ev.customBase64 ? Math.round((ev.customBase64.length * 3) / 4) : 0),
+      0
+    );
+
+  const handlePreviewMusicPreset = () => {
+    if (!selectedMusicPresetObj) return;
+    if (previewMusicRef.current) {
+      previewMusicRef.current.pause();
+      previewMusicRef.current = null;
+      if (isMusicPreviewPlaying) {
+        setIsMusicPreviewPlaying(false);
+        return;
+      }
+    }
+
+    const audio = new Audio(selectedMusicPresetObj.previewPath);
+    previewMusicRef.current = audio;
+    setIsMusicPreviewPlaying(true);
+    audio.onended = () => setIsMusicPreviewPlaying(false);
+    audio.onerror = () => {
+      setIsMusicPreviewPlaying(false);
+      setBannerNotice(
+        `El archivo "${selectedMusicPresetObj.fileName}" todavía está pendiente en public/audio/music/. Podés subir un .mp3 propio.`
+      );
+      setTimeout(() => setBannerNotice(null), 4500);
+    };
+    audio.play().catch(() => setIsMusicPreviewPlaying(false));
+  };
+
+  const handleAddSfxEvent = () => {
+    const parsedTime = Math.max(0, Math.min(durationSeconds - 0.1, Number(newSfxTime) || 0));
+    const preset = getSfxPresetById(newSfxId);
+    const nextEvent: SfxEvent = {
+      id: newSfxId,
+      timeSec: Number(parsedTime.toFixed(2)),
+      volume: preset?.defaultVolume ?? 0.85,
+      label: preset?.label || newSfxId,
+    };
+    setSfxEvents((prev) => [...prev, nextEvent].sort((a, b) => a.timeSec - b.timeSec));
+  };
+
+  const handleSyncSfxFromHtml = () => {
+    const parsed = parseSfxFromHtml(htmlCode);
+    lastParsedSfxSigRef.current = JSON.stringify(parsed);
+    setSfxEvents(parsed);
+    setBannerNotice(
+      parsed.length > 0
+        ? `${parsed.length} marcador(es) SFX sincronizados desde el HTML.`
+        : "No se encontraron etiquetas zyrvae-sfx en el HTML."
+    );
+    setTimeout(() => setBannerNotice(null), 3500);
+  };
+
+  const handleGenerateAiSfx = async () => {
+    const prompt = customSfxPrompt.trim();
+    if (!prompt || isGeneratingSfx) return;
+
+    setIsGeneratingSfx(true);
+    setSfxError(null);
+    try {
+      const res = await fetch("/api/sfx", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          text: prompt,
+          durationSeconds: 1.5,
+          promptInfluence: 0.4,
+        }),
+      });
+      const data = await res.json().catch(() => null);
+      if (!res.ok || !data?.base64) {
+        throw new Error(data?.error || "No se pudo generar el efecto SFX.");
+      }
+
+      const parsedTime = Math.max(0, Math.min(durationSeconds - 0.1, Number(newSfxTime) || 0));
+      const newEvent: SfxEvent = {
+        id: "custom-ai",
+        timeSec: Number(parsedTime.toFixed(2)),
+        volume: 0.9,
+        label: `IA: ${prompt.slice(0, 22)}${prompt.length > 22 ? "…" : ""}`,
+        customBase64: data.base64,
+      };
+      setSfxEvents((prev) => [...prev, newEvent].sort((a, b) => a.timeSec - b.timeSec));
+      setCustomSfxPrompt("");
+    } catch (err: unknown) {
+      setSfxError(err instanceof Error ? err.message : "Error generando SFX con ElevenLabs.");
+    } finally {
+      setIsGeneratingSfx(false);
+    }
+  };
 
   const handlePreviewVoice = () => {
     const previewUrl = selectedVoiceObj?.preview_url;
@@ -637,8 +791,15 @@ export default function StudioPage() {
       cleanVideo: cleanVideoMode,
       audioData: audioFile?.base64 || null,
       audioExt: audioFile?.ext || null,
+      musicPresetId: audioFile ? null : selectedMusicPresetId || null,
       voiceoverBase64: voiceoverAudio?.base64 || null,
       voiceoverExt: voiceoverAudio ? "mp3" : null,
+      sfxEvents: sfxEvents.map((ev) => ({
+        id: ev.id,
+        timeSec: ev.timeSec,
+        volume: ev.volume,
+        ...(ev.customBase64 ? { customBase64: ev.customBase64, ext: "mp3" } : {}),
+      })),
       async: true,
     };
 
@@ -768,8 +929,12 @@ export default function StudioPage() {
 
       // ETAPA 2: Proxy API (/api/render) con trabajo asíncrono + polling
       if (!mp4Blob) {
+        const sfxCustomChars = sfxEvents.reduce(
+          (acc, ev) => acc + (ev.customBase64 ? ev.customBase64.length : 0),
+          0
+        );
         const proxyAudioBase64Chars =
-          (audioFile?.base64.length || 0) + (voiceoverAudio?.base64.length || 0);
+          (audioFile?.base64.length || 0) + (voiceoverAudio?.base64.length || 0) + sfxCustomChars;
         const MAX_PROXY_AUDIO_CHARS = Math.ceil(3.5 * 1024 * 1024 * 1.37);
         if (proxyAudioBase64Chars > MAX_PROXY_AUDIO_CHARS) {
           throw new Error(
@@ -1401,13 +1566,13 @@ export default function StudioPage() {
                 </label>
               </div>
 
-              {/* Pista de Audio Opcional (.mp3 / .wav) */}
-              <div className="p-3 rounded-xl bg-zinc-950/60 border border-zinc-800/80 space-y-2">
+              {/* Música de Fondo (Presets + Archivo propio) */}
+              <div className="p-3 rounded-xl bg-zinc-950/60 border border-zinc-800/80 space-y-2.5">
                 <div className="flex items-center justify-between gap-2">
                   <div className="flex items-center gap-2 text-xs">
                     <Music className="h-3.5 w-3.5 text-indigo-400 shrink-0" />
                     <span className="font-semibold text-zinc-200">
-                      Pista de Audio Opcional (.mp3 / .wav)
+                      Música de Fondo (Presets / MP3)
                     </span>
                   </div>
                   <input
@@ -1429,7 +1594,7 @@ export default function StudioPage() {
                       className="inline-flex items-center gap-1 px-2 py-1 rounded-lg text-[11px] bg-red-500/15 text-red-300 border border-red-500/30 hover:bg-red-500/25 transition-colors"
                     >
                       <X className="h-3 w-3" />
-                      Quitar
+                      Quitar archivo
                     </button>
                   ) : (
                     <Button
@@ -1440,18 +1605,275 @@ export default function StudioPage() {
                       onClick={() => audioInputRef.current?.click()}
                       className="h-7 text-[11px] border-zinc-700 bg-zinc-900 hover:bg-zinc-800 text-zinc-200"
                     >
-                      Adjuntar Audio
+                      Subir .mp3/.wav
                     </Button>
                   )}
                 </div>
+
+                {!audioFile && (
+                  <div className="space-y-1.5">
+                    <div className="flex items-center gap-2">
+                      <select
+                        value={selectedMusicPresetId}
+                        disabled={isLoading}
+                        onChange={(e) => {
+                          setSelectedMusicPresetId(e.target.value);
+                          if (previewMusicRef.current) {
+                            previewMusicRef.current.pause();
+                            setIsMusicPreviewPlaying(false);
+                          }
+                        }}
+                        className="flex-1 min-w-0 h-8 px-2.5 rounded-lg bg-zinc-900 border border-zinc-700 text-xs text-zinc-100 focus:outline-none focus:ring-1 focus:ring-indigo-500"
+                      >
+                        <option value="">Sin música preset</option>
+                        {MUSIC_PRESETS.map((preset) => {
+                          const available = musicAvailability[preset.id];
+                          return (
+                            <option key={preset.id} value={preset.id}>
+                              {preset.title} ({preset.bpm} BPM){available === false ? " · Archivo pendiente" : ""}
+                            </option>
+                          );
+                        })}
+                      </select>
+
+                      <Button
+                        type="button"
+                        size="sm"
+                        variant="outline"
+                        disabled={!selectedMusicPresetObj || isLoading}
+                        onClick={handlePreviewMusicPreset}
+                        className="h-8 px-2.5 text-[11px] border-zinc-700 bg-zinc-900 hover:bg-zinc-800 text-zinc-200 shrink-0"
+                      >
+                        {isMusicPreviewPlaying ? (
+                          <>
+                            <Square className="h-3 w-3 mr-1 text-indigo-400" />
+                            Parar
+                          </>
+                        ) : (
+                          <>
+                            <Volume2 className="h-3.5 w-3.5 mr-1 text-indigo-400" />
+                            Preview
+                          </>
+                        )}
+                      </Button>
+                    </div>
+                    {selectedMusicPresetObj && (
+                      <div className="flex items-center justify-between gap-2 text-[11px]">
+                        <span className="text-zinc-400 truncate">
+                          {selectedMusicPresetObj.mood} · Loop automático ({voiceoverAudio ? "vol 20%" : "vol 55%"})
+                        </span>
+                        {musicAvailability[selectedMusicPresetObj.id] === false ? (
+                          <span className="text-amber-300 font-mono shrink-0">Archivo pendiente</span>
+                        ) : (
+                          <span className="text-emerald-300 font-mono shrink-0">Preset listo</span>
+                        )}
+                      </div>
+                    )}
+                  </div>
+                )}
+
                 {audioFile ? (
                   <p className="text-[11px] font-mono text-emerald-300 truncate">
-                    ✓ {audioFile.name} ({(audioFile.sizeBytes / (1024 * 1024)).toFixed(2)} MB) — {voiceoverAudio ? "Música al 22% bajo voz (AAC 192k)" : "Mezcla AAC 192k (-shortest)"}
+                    ✓ {audioFile.name} ({(audioFile.sizeBytes / (1024 * 1024)).toFixed(2)} MB) — {voiceoverAudio ? "Música al 20% bajo voz (AAC 192k)" : "Música al 55% (AAC 192k)"}
                   </p>
                 ) : (
                   <p className="text-[11px] text-zinc-500">
-                    Opcional (máx. 3.5 MB · recomendado .mp3 en lugar de .wav): música de fondo mezclada en FFmpeg.
+                    Elegí un preset integrado o subí tu .mp3 propio (máx. 3.5 MB). Se ajusta en loop a {durationSeconds}s.
                   </p>
+                )}
+              </div>
+
+              {/* Efectos de Sonido (SFX) Sincronizados */}
+              <div className="p-3 rounded-xl bg-zinc-950/60 border border-zinc-800/80 space-y-2.5">
+                <div className="flex items-center justify-between gap-2">
+                  <div className="flex items-center gap-2 text-xs">
+                    <Sparkles className="h-3.5 w-3.5 text-cyan-400 shrink-0" />
+                    <span className="font-semibold text-zinc-200">
+                      Efectos de Sonido (SFX) ({sfxEvents.length})
+                    </span>
+                  </div>
+                  <button
+                    type="button"
+                    disabled={isLoading}
+                    onClick={handleSyncSfxFromHtml}
+                    className="text-[11px] text-cyan-300 hover:text-cyan-200 underline-offset-2 hover:underline"
+                  >
+                    Leer del HTML
+                  </button>
+                </div>
+
+                {sfxEvents.length === 0 ? (
+                  <p className="text-[11px] text-zinc-500 leading-relaxed">
+                    Sin SFX activos. Agregá uno abajo o declará <code className="text-zinc-300">&lt;meta name=&quot;zyrvae-sfx&quot; content=&quot;impact@2.0,whoosh@8.0&quot;&gt;</code> en tu HTML.
+                  </p>
+                ) : (
+                  <div className="space-y-1.5 max-h-40 overflow-y-auto pr-1">
+                    {sfxEvents.map((ev, idx) => {
+                      const isCustomAi = Boolean(ev.customBase64);
+                      const isMissingFile = !isCustomAi && sfxAvailability[ev.id] === false;
+                      return (
+                        <div
+                          key={`${ev.id}-${idx}`}
+                          className="flex items-center gap-1.5 p-1.5 rounded-lg bg-zinc-900/80 border border-zinc-800 text-[11px]"
+                        >
+                          {isCustomAi ? (
+                            <span className="flex-1 min-w-0 truncate text-cyan-300 font-medium px-1">
+                              {ev.label || "SFX IA"}
+                            </span>
+                          ) : (
+                            <select
+                              value={ev.id}
+                              disabled={isLoading}
+                              onChange={(e) => {
+                                const nextId = e.target.value;
+                                const preset = getSfxPresetById(nextId);
+                                setSfxEvents((prev) =>
+                                  prev.map((item, i) =>
+                                    i === idx
+                                      ? { ...item, id: nextId, label: preset?.label || nextId }
+                                      : item
+                                  )
+                                );
+                              }}
+                              className="flex-1 min-w-0 h-7 px-1.5 rounded bg-zinc-950 border border-zinc-700 text-zinc-100"
+                            >
+                              {SFX_PRESETS.map((sp) => (
+                                <option key={sp.id} value={sp.id}>
+                                  {sp.label}{sfxAvailability[sp.id] === false ? " (pendiente)" : ""}
+                                </option>
+                              ))}
+                            </select>
+                          )}
+
+                          {isMissingFile && (
+                            <span
+                              title={`Falta ${ev.id}.mp3 en public/audio/sfx/`}
+                              className="px-1.5 py-0.5 rounded bg-amber-500/15 text-amber-300 border border-amber-500/30 text-[10px] shrink-0"
+                            >
+                              Pendiente
+                            </span>
+                          )}
+
+                          <div className="flex items-center gap-1 shrink-0">
+                            <input
+                              type="number"
+                              min={0}
+                              max={Math.max(0, durationSeconds - 0.1)}
+                              step={0.1}
+                              disabled={isLoading}
+                              value={ev.timeSec}
+                              onChange={(e) => {
+                                const val = Math.max(0, Number(e.target.value) || 0);
+                                setSfxEvents((prev) =>
+                                  prev.map((item, i) => (i === idx ? { ...item, timeSec: val } : item))
+                                );
+                              }}
+                              className="w-14 h-7 px-1.5 rounded bg-zinc-950 border border-zinc-700 text-right font-mono text-zinc-100"
+                            />
+                            <span className="text-zinc-500">s</span>
+                          </div>
+
+                          <input
+                            type="number"
+                            min={0.1}
+                            max={1}
+                            step={0.05}
+                            title="Volumen (0.1 - 1.0)"
+                            disabled={isLoading}
+                            value={ev.volume}
+                            onChange={(e) => {
+                              const val = Math.min(1, Math.max(0.1, Number(e.target.value) || 0.85));
+                              setSfxEvents((prev) =>
+                                prev.map((item, i) => (i === idx ? { ...item, volume: val } : item))
+                              );
+                            }}
+                            className="w-12 h-7 px-1 rounded bg-zinc-950 border border-zinc-700 text-right font-mono text-zinc-200 shrink-0"
+                          />
+
+                          <button
+                            type="button"
+                            disabled={isLoading}
+                            onClick={() => setSfxEvents((prev) => prev.filter((_, i) => i !== idx))}
+                            className="p-1 rounded text-red-300 hover:bg-red-500/20 shrink-0"
+                            title="Quitar SFX"
+                          >
+                            <X className="h-3.5 w-3.5" />
+                          </button>
+                        </div>
+                      );
+                    })}
+                  </div>
+                )}
+
+                <div className="flex items-center gap-1.5 pt-1">
+                  <select
+                    value={newSfxId}
+                    disabled={isLoading}
+                    onChange={(e) => setNewSfxId(e.target.value)}
+                    className="flex-1 min-w-0 h-7 px-2 rounded-lg bg-zinc-900 border border-zinc-700 text-[11px] text-zinc-100"
+                  >
+                    {SFX_PRESETS.map((sp) => (
+                      <option key={sp.id} value={sp.id}>
+                        {sp.label} ({sp.durationSec}s){sfxAvailability[sp.id] === false ? " · Pendiente" : ""}
+                      </option>
+                    ))}
+                  </select>
+                  <input
+                    type="number"
+                    min={0}
+                    max={Math.max(0, durationSeconds - 0.1)}
+                    step={0.1}
+                    disabled={isLoading}
+                    value={newSfxTime}
+                    onChange={(e) => setNewSfxTime(e.target.value)}
+                    placeholder="Seg"
+                    className="w-16 h-7 px-2 rounded-lg bg-zinc-900 border border-zinc-700 text-[11px] font-mono text-zinc-100"
+                  />
+                  <Button
+                    type="button"
+                    size="sm"
+                    variant="outline"
+                    disabled={isLoading}
+                    onClick={handleAddSfxEvent}
+                    className="h-7 px-2 text-[11px] border-cyan-500/40 bg-cyan-500/10 hover:bg-cyan-500/20 text-cyan-200 shrink-0"
+                  >
+                    <Plus className="h-3 w-3 mr-1" />
+                    Agregar SFX
+                  </Button>
+                </div>
+
+                {ttsConfigured && (
+                  <div className="pt-1 border-t border-zinc-800/70 space-y-1.5">
+                    <div className="flex items-center gap-1.5">
+                      <input
+                        type="text"
+                        maxLength={250}
+                        disabled={isLoading || isGeneratingSfx}
+                        value={customSfxPrompt}
+                        onChange={(e) => setCustomSfxPrompt(e.target.value)}
+                        placeholder="SFX con ElevenLabs (ej. deep bass drop impact)..."
+                        className="flex-1 min-w-0 h-7 px-2 rounded-lg bg-zinc-900 border border-zinc-800 text-[11px] text-zinc-100 placeholder:text-zinc-500"
+                      />
+                      <Button
+                        type="button"
+                        size="sm"
+                        variant="outline"
+                        disabled={isLoading || isGeneratingSfx || !customSfxPrompt.trim()}
+                        onClick={handleGenerateAiSfx}
+                        className="h-7 px-2 text-[11px] border-fuchsia-500/40 bg-fuchsia-500/10 hover:bg-fuchsia-500/20 text-fuchsia-200 shrink-0"
+                      >
+                        {isGeneratingSfx ? (
+                          <Loader2 className="h-3 w-3 animate-spin" />
+                        ) : (
+                          <>
+                            <Wand2 className="h-3 w-3 mr-1" />
+                            Generar SFX
+                          </>
+                        )}
+                      </Button>
+                    </div>
+                    {sfxError && <p className="text-[11px] text-red-400">{sfxError}</p>}
+                  </div>
                 )}
               </div>
 
@@ -1594,7 +2016,7 @@ export default function StudioPage() {
                         />
                         <p className="text-[11px] font-mono text-fuchsia-300 truncate">
                           ✓ Voz lista ({voiceoverAudio.voiceName} · {(voiceoverAudio.sizeBytes / 1024).toFixed(0)} KB)
-                          {audioFile ? " — Se mezclará con música al 22%" : ""}
+                          {audioFile || selectedMusicPresetId ? " — Se mezclará con música al 20%" : ""}
                         </p>
                       </div>
                     )}

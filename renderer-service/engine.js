@@ -380,6 +380,7 @@ export async function renderHtmlToMp4({
   cleanVideo = true,
   audioPath = null,
   voiceoverPath = null,
+  sfxItems = [],
   outputPath,
   onProgress,
 }) {
@@ -401,6 +402,18 @@ export async function renderHtmlToMp4({
 
   const hasMusic = Boolean(audioPath && fs.existsSync(audioPath));
   const hasVoiceover = Boolean(voiceoverPath && fs.existsSync(voiceoverPath));
+  const validSfx = Array.isArray(sfxItems)
+    ? sfxItems.filter(
+        (item) =>
+          item &&
+          typeof item.path === "string" &&
+          fs.existsSync(item.path) &&
+          Number.isFinite(Number(item.timeSec)) &&
+          Number(item.timeSec) >= 0 &&
+          Number(item.timeSec) < safeDuration
+      )
+    : [];
+
   const ffmpegArgs = [
     "-y",
     "-f", "image2pipe",
@@ -409,11 +422,27 @@ export async function renderHtmlToMp4({
     "-i", "-",
   ];
 
+  let nextInputIdx = 1;
+  let musicIdx = -1;
+  let voIdx = -1;
+  const sfxMapped = [];
+
   if (hasMusic) {
-    ffmpegArgs.push("-i", audioPath);
+    musicIdx = nextInputIdx++;
+    ffmpegArgs.push("-stream_loop", "-1", "-i", audioPath);
   }
   if (hasVoiceover) {
+    voIdx = nextInputIdx++;
     ffmpegArgs.push("-i", voiceoverPath);
+  }
+  for (const sfx of validSfx) {
+    const idx = nextInputIdx++;
+    ffmpegArgs.push("-i", sfx.path);
+    sfxMapped.push({
+      idx,
+      timeSec: Number(sfx.timeSec),
+      volume: Math.min(1.5, Math.max(0.05, Number(sfx.volume) || 0.85)),
+    });
   }
 
   ffmpegArgs.push(
@@ -425,18 +454,49 @@ export async function renderHtmlToMp4({
     "-vf", "scale=trunc(iw/2)*2:trunc(ih/2)*2"
   );
 
-  if (hasMusic && hasVoiceover) {
+  const hasAnyAudioTrack = hasMusic || hasVoiceover || sfxMapped.length > 0;
+  if (hasAnyAudioTrack) {
+    const filterSteps = [
+      `anullsrc=channel_layout=stereo:sample_rate=44100:d=${safeDuration}[base]`,
+    ];
+    const mixInputs = ["[base]"];
+
+    if (hasMusic) {
+      const musicVol = hasVoiceover ? "0.20" : "0.55";
+      filterSteps.push(
+        `[${musicIdx}:a]aresample=44100,aformat=channel_layouts=stereo,volume=${musicVol}[bg]`
+      );
+      mixInputs.push("[bg]");
+    }
+
+    if (hasVoiceover) {
+      filterSteps.push(
+        `[${voIdx}:a]aresample=44100,aformat=channel_layouts=stereo,volume=1.0[vo]`
+      );
+      mixInputs.push("[vo]");
+    }
+
+    sfxMapped.forEach((sfx, k) => {
+      const delayMs = Math.max(0, Math.round(sfx.timeSec * 1000));
+      filterSteps.push(
+        `[${sfx.idx}:a]aresample=44100,aformat=channel_layouts=stereo,adelay=${delayMs}|${delayMs},volume=${sfx.volume.toFixed(2)}[sfx${k}]`
+      );
+      mixInputs.push(`[sfx${k}]`);
+    });
+
+    filterSteps.push(
+      `${mixInputs.join("")}amix=inputs=${mixInputs.length}:duration=first:normalize=0[aout]`
+    );
+
     ffmpegArgs.push(
       "-filter_complex",
-      "[1:a]volume=0.22[bg];[2:a]volume=1.0[vo];[bg][vo]amix=inputs=2:duration=shortest:dropout_transition=2[aout]",
+      filterSteps.join(";"),
       "-map", "0:v:0",
       "-map", "[aout]",
       "-c:a", "aac",
       "-b:a", "192k",
       "-shortest"
     );
-  } else if (hasMusic || hasVoiceover) {
-    ffmpegArgs.push("-shortest", "-c:a", "aac", "-b:a", "192k");
   }
 
   ffmpegArgs.push("-movflags", "+faststart", outputPath);
