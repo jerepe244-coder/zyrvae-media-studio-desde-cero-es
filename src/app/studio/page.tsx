@@ -147,6 +147,54 @@ const DURATION_PRESETS = [
   { seconds: 60, label: "1 min", desc: "Anuncio Completo" },
 ];
 
+interface ElevenLabsVoiceItem {
+  voice_id: string;
+  name: string;
+  category?: string;
+  labels?: Record<string, string>;
+  preview_url?: string | null;
+}
+
+type VoicesFetchOutcome =
+  | { ok: true; voices: ElevenLabsVoiceItem[] }
+  | { ok: false; configured: boolean; error: string };
+
+async function fetchVoicesStatus(): Promise<VoicesFetchOutcome> {
+  try {
+    const res = await fetch("/api/tts", { cache: "no-store" });
+    const data = await res.json().catch(() => null);
+
+    // Solo ocultar el selector si el servidor confirma que falta ELEVENLABS_API_KEY
+    if (data?.configured === false || (res.status === 503 && data?.configured !== true)) {
+      return {
+        ok: false,
+        configured: false,
+        error: data?.error || "ELEVENLABS_API_KEY no está configurada en el entorno del servidor.",
+      };
+    }
+
+    if (!res.ok || !Array.isArray(data?.voices)) {
+      const detailSuffix =
+        typeof data?.details === "string" && data.details.trim()
+          ? ` (${data.details.trim().slice(0, 140)})`
+          : "";
+      return {
+        ok: false,
+        configured: true,
+        error: (data?.error || `Error HTTP ${res.status} al consultar /api/tts.`) + detailSuffix,
+      };
+    }
+
+    return { ok: true, voices: data.voices };
+  } catch (err: unknown) {
+    return {
+      ok: false,
+      configured: true,
+      error: `Error de red consultando /api/tts: ${err instanceof Error ? err.message : "fallo de conexión"}`,
+    };
+  }
+}
+
 export default function StudioPage() {
   // Pestaña en vista móvil: "editor" o "preview"
   const [mobileTab, setMobileTab] = React.useState<"editor" | "preview">("editor");
@@ -188,15 +236,7 @@ export default function StudioPage() {
 
   // Voz en Off con ElevenLabs
   const previewAudioRef = React.useRef<HTMLAudioElement | null>(null);
-  const [elevenVoices, setElevenVoices] = React.useState<
-    Array<{
-      voice_id: string;
-      name: string;
-      category?: string;
-      labels?: Record<string, string>;
-      preview_url?: string | null;
-    }>
-  >([]);
+  const [elevenVoices, setElevenVoices] = React.useState<ElevenLabsVoiceItem[]>([]);
   const [voicesLoading, setVoicesLoading] = React.useState<boolean>(true);
   const [ttsConfigured, setTtsConfigured] = React.useState<boolean>(true);
   const [voicesError, setVoicesError] = React.useState<string | null>(null);
@@ -520,37 +560,21 @@ export default function StudioPage() {
     };
 
     const loadVoices = async () => {
-      try {
-        const res = await fetch("/api/tts", { cache: "no-store" });
-        const data = await res.json().catch(() => null);
-        if (!active) return;
+      const outcome = await fetchVoicesStatus();
+      if (!active) return;
 
-        if (res.status === 503 || data?.configured === false) {
-          setTtsConfigured(false);
-          setVoicesError(data?.error || "ELEVENLABS_API_KEY no configurada.");
-          return;
-        }
-
-        if (!res.ok || !Array.isArray(data?.voices)) {
-          setVoicesError(data?.error || "No se pudieron cargar las voces de ElevenLabs.");
-          return;
-        }
-
+      if (!outcome.ok) {
+        setTtsConfigured(outcome.configured);
+        setVoicesError(outcome.error);
+      } else {
         setTtsConfigured(true);
         setVoicesError(null);
-        setElevenVoices(data.voices);
-        if (data.voices.length > 0) {
-          setSelectedVoiceId((prev) => prev || data.voices[0].voice_id);
-        }
-      } catch {
-        if (active) {
-          setVoicesError("No se pudo conectar con /api/tts.");
-        }
-      } finally {
-        if (active) {
-          setVoicesLoading(false);
+        setElevenVoices(outcome.voices);
+        if (outcome.voices.length > 0) {
+          setSelectedVoiceId((prev) => prev || outcome.voices[0].voice_id);
         }
       }
+      setVoicesLoading(false);
     };
 
     loadAudioAvailability();
@@ -1901,7 +1925,11 @@ export default function StudioPage() {
 
                 {!ttsConfigured ? (
                   <p className="text-[11px] text-amber-300/90 leading-relaxed">
-                    Configurá <code className="text-amber-200">ELEVENLABS_API_KEY</code> en el entorno del servidor para habilitar la locución IA sin exponer la clave en el navegador.
+                    {voicesError || (
+                      <>
+                        Configurá <code className="text-amber-200">ELEVENLABS_API_KEY</code> en el entorno del servidor para habilitar la locución IA sin exponer la clave en el navegador.
+                      </>
+                    )}
                   </p>
                 ) : (
                   <>
@@ -1976,7 +2004,32 @@ export default function StudioPage() {
                     </div>
 
                     {voicesError && (
-                      <p className="text-[11px] text-amber-300">{voicesError}</p>
+                      <div className="flex items-start justify-between gap-2 p-2 rounded-lg bg-amber-500/10 border border-amber-500/30 text-[11px] text-amber-300">
+                        <span className="leading-snug">{voicesError}</span>
+                        <button
+                          type="button"
+                          disabled={voicesLoading}
+                          onClick={async () => {
+                            setVoicesLoading(true);
+                            const outcome = await fetchVoicesStatus();
+                            if (!outcome.ok) {
+                              setTtsConfigured(outcome.configured);
+                              setVoicesError(outcome.error);
+                            } else {
+                              setTtsConfigured(true);
+                              setVoicesError(null);
+                              setElevenVoices(outcome.voices);
+                              if (outcome.voices.length > 0) {
+                                setSelectedVoiceId((prev) => prev || outcome.voices[0].voice_id);
+                              }
+                            }
+                            setVoicesLoading(false);
+                          }}
+                          className="shrink-0 px-2 py-0.5 rounded bg-amber-500/20 hover:bg-amber-500/30 text-amber-200 font-medium"
+                        >
+                          Reintentar
+                        </button>
+                      </div>
                     )}
                     {ttsError && (
                       <p className="text-[11px] text-red-400">{ttsError}</p>

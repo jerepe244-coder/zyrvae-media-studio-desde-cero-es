@@ -24,6 +24,36 @@ function clampUnit(value: unknown, fallback: number): number {
   return Math.min(1, Math.max(0, num));
 }
 
+function extractElevenLabsErrorMessage(rawText: string, status: number): string {
+  const trimmed = rawText.trim();
+  if (trimmed) {
+    try {
+      const parsed = JSON.parse(trimmed) as {
+        detail?: string | { message?: string; status?: string };
+        error?: string;
+        message?: string;
+      };
+      if (typeof parsed.detail === "string" && parsed.detail.trim()) {
+        return `ElevenLabs (${status}): ${parsed.detail.trim()}`;
+      }
+      if (parsed.detail && typeof parsed.detail === "object" && parsed.detail.message) {
+        return `ElevenLabs (${status}): ${parsed.detail.message}`;
+      }
+      if (parsed.error) return `ElevenLabs (${status}): ${parsed.error}`;
+      if (parsed.message) return `ElevenLabs (${status}): ${parsed.message}`;
+    } catch {}
+    return `ElevenLabs (${status}): ${trimmed.slice(0, 240)}`;
+  }
+
+  if (status === 401) {
+    return "ElevenLabs (401): ELEVENLABS_API_KEY inválida o sin permisos.";
+  }
+  if (status === 429) {
+    return "ElevenLabs (429): Límite de velocidad o cuota alcanzada temporalmente.";
+  }
+  return `ElevenLabs respondió con estado ${status}.`;
+}
+
 export async function GET() {
   const apiKey = getElevenLabsApiKey();
   if (!apiKey) {
@@ -51,14 +81,23 @@ export async function GET() {
 
     if (!response.ok) {
       const errorText = await response.text().catch(() => "");
+      const readableError = extractElevenLabsErrorMessage(errorText, response.status);
+      // Nunca devolver 503 cuando la key existe, para no confundirlo con variable faltante
+      const mappedStatus =
+        response.status === 401 || response.status === 429
+          ? response.status
+          : response.status >= 500
+            ? 502
+            : response.status;
       return NextResponse.json(
         {
           configured: true,
           voices: [],
-          error: `ElevenLabs respondió con estado ${response.status}`,
+          upstreamStatus: response.status,
+          error: readableError,
           details: errorText.slice(0, 300),
         },
-        { status: response.status === 401 ? 502 : response.status }
+        { status: mappedStatus }
       );
     }
 
@@ -164,7 +203,7 @@ export async function POST(request: Request) {
       const errText = await ttsResponse.text().catch(() => "");
       return NextResponse.json(
         {
-          error: `Error de ElevenLabs (${ttsResponse.status}) al sintetizar el audio.`,
+          error: extractElevenLabsErrorMessage(errText, ttsResponse.status),
           details: errText.slice(0, 400),
         },
         { status: ttsResponse.status >= 400 && ttsResponse.status < 500 ? ttsResponse.status : 502 }
