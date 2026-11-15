@@ -337,6 +337,8 @@ export async function getSharedBrowser() {
         "--disable-ipc-flooding-protection",
         "--disable-renderer-backgrounding",
         "--font-render-hinting=none",
+        "--renderer-process-limit=1",
+        "--js-flags=--max-old-space-size=128",
       ],
     });
 
@@ -448,8 +450,10 @@ export async function renderHtmlToMp4({
   ffmpegArgs.push(
     "-r", String(safeFps),
     "-c:v", "libx264",
-    "-preset", "medium",
-    "-crf", "18",
+    "-preset", "veryfast",
+    "-crf", "19",
+    "-threads", "2",
+    "-x264-params", "rc-lookahead=10:ref=2",
     "-pix_fmt", "yuv420p",
     "-vf", "scale=trunc(iw/2)*2:trunc(ih/2)*2"
   );
