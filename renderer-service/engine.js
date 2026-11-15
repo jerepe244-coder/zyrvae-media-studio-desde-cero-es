@@ -416,96 +416,28 @@ export async function renderHtmlToMp4({
       )
     : [];
 
-  const ffmpegArgs = [
+  const hasAnyAudioTrack = hasMusic || hasVoiceover || sfxMapped.length > 0;
+  const videoOnlyPath = hasAnyAudioTrack ? `${outputPath}.video.mp4` : outputPath;
+
+  const videoFfmpegArgs = [
     "-y",
     "-f", "image2pipe",
-    "-vcodec", "png",
+    "-vcodec", "mjpeg",
     "-framerate", String(safeFps),
     "-i", "-",
-  ];
-
-  let nextInputIdx = 1;
-  let musicIdx = -1;
-  let voIdx = -1;
-  const sfxMapped = [];
-
-  if (hasMusic) {
-    musicIdx = nextInputIdx++;
-    ffmpegArgs.push("-stream_loop", "-1", "-i", audioPath);
-  }
-  if (hasVoiceover) {
-    voIdx = nextInputIdx++;
-    ffmpegArgs.push("-i", voiceoverPath);
-  }
-  for (const sfx of validSfx) {
-    const idx = nextInputIdx++;
-    ffmpegArgs.push("-i", sfx.path);
-    sfxMapped.push({
-      idx,
-      timeSec: Number(sfx.timeSec),
-      volume: Math.min(1.5, Math.max(0.05, Number(sfx.volume) || 0.85)),
-    });
-  }
-
-  ffmpegArgs.push(
     "-r", String(safeFps),
     "-c:v", "libx264",
     "-preset", "veryfast",
     "-crf", "19",
-    "-threads", "2",
-    "-x264-params", "rc-lookahead=10:ref=2",
+    "-threads", "1",
+    "-x264-params", "rc-lookahead=0:bframes=0",
     "-pix_fmt", "yuv420p",
-    "-vf", "scale=trunc(iw/2)*2:trunc(ih/2)*2"
-  );
+    "-vf", "scale=trunc(iw/2)*2:trunc(ih/2)*2",
+    ...(hasAnyAudioTrack ? [] : ["-movflags", "+faststart"]),
+    videoOnlyPath,
+  ];
 
-  const hasAnyAudioTrack = hasMusic || hasVoiceover || sfxMapped.length > 0;
-  if (hasAnyAudioTrack) {
-    const filterSteps = [
-      `anullsrc=channel_layout=stereo:sample_rate=44100:d=${safeDuration}[base]`,
-    ];
-    const mixInputs = ["[base]"];
-
-    if (hasMusic) {
-      const musicVol = hasVoiceover ? "0.20" : "0.55";
-      filterSteps.push(
-        `[${musicIdx}:a]aresample=44100,aformat=channel_layouts=stereo,volume=${musicVol}[bg]`
-      );
-      mixInputs.push("[bg]");
-    }
-
-    if (hasVoiceover) {
-      filterSteps.push(
-        `[${voIdx}:a]aresample=44100,aformat=channel_layouts=stereo,volume=1.0[vo]`
-      );
-      mixInputs.push("[vo]");
-    }
-
-    sfxMapped.forEach((sfx, k) => {
-      const delayMs = Math.max(0, Math.round(sfx.timeSec * 1000));
-      filterSteps.push(
-        `[${sfx.idx}:a]aresample=44100,aformat=channel_layouts=stereo,adelay=${delayMs}|${delayMs},volume=${sfx.volume.toFixed(2)}[sfx${k}]`
-      );
-      mixInputs.push(`[sfx${k}]`);
-    });
-
-    filterSteps.push(
-      `${mixInputs.join("")}amix=inputs=${mixInputs.length}:duration=first:normalize=0[aout]`
-    );
-
-    ffmpegArgs.push(
-      "-filter_complex",
-      filterSteps.join(";"),
-      "-map", "0:v:0",
-      "-map", "[aout]",
-      "-c:a", "aac",
-      "-b:a", "192k",
-      "-shortest"
-    );
-  }
-
-  ffmpegArgs.push("-movflags", "+faststart", outputPath);
-
-  const ffmpegProcess = spawn(FFMPEG_PATH, ffmpegArgs);
+  const ffmpegProcess = spawn(FFMPEG_PATH, videoFfmpegArgs);
   let stdinClosed = false;
 
   ffmpegProcess.stdin.on("error", (err) => {
@@ -515,28 +447,12 @@ export async function renderHtmlToMp4({
   });
 
   let ffmpegErrorLog = "";
-  let encodingStarted = false;
 
   ffmpegProcess.stderr.on("data", (chunk) => {
     const text = chunk.toString();
     ffmpegErrorLog += text;
     if (ffmpegErrorLog.length > 8000) {
       ffmpegErrorLog = ffmpegErrorLog.slice(-6000);
-    }
-
-    if (encodingStarted && onProgress) {
-      const match = text.match(/frame=\s*(\d+)/);
-      if (match) {
-        const encodedFrame = Math.min(targetFrames, parseInt(match[1], 10));
-        const encPct = Math.min(99, 85 + Math.round((encodedFrame / targetFrames) * 14));
-        onProgress({
-          phase: "encoding",
-          frame: targetFrames,
-          totalFrames: targetFrames,
-          percent: encPct,
-          currentTimeSeconds: safeDuration.toFixed(1),
-        });
-      }
     }
   });
 
@@ -546,7 +462,7 @@ export async function renderHtmlToMp4({
         resolve(true);
       } else {
         reject(
-          new Error(`FFmpeg finalizó con código ${code}: ${ffmpegErrorLog.slice(-500)}`)
+          new Error(`FFmpeg video pass finalizó con código ${code}: ${ffmpegErrorLog.slice(-500)}`)
         );
       }
     });
@@ -648,7 +564,8 @@ export async function renderHtmlToMp4({
       }, currentMs);
 
       const shot = await cdp.send("Page.captureScreenshot", {
-        format: "png",
+        format: "jpeg",
+        quality: 95,
       });
 
       const frameBuffer = Buffer.from(shot.data, "base64");
@@ -673,18 +590,117 @@ export async function renderHtmlToMp4({
     await page.close().catch(() => {});
     page = null;
 
-    encodingStarted = true;
     onProgress?.({
       phase: "encoding",
       frame: targetFrames,
       totalFrames: targetFrames,
-      percent: 87,
+      percent: 88,
       currentTimeSeconds: safeDuration.toFixed(1),
     });
 
     stdinClosed = true;
     ffmpegProcess.stdin.end();
     await ffmpegPromise;
+
+    if (hasAnyAudioTrack) {
+      if (targetFrames > 300 && sharedBrowser) {
+        const closingBrowser = sharedBrowser;
+        sharedBrowser = null;
+        await closingBrowser.close().catch(() => {});
+      }
+
+      onProgress?.({
+        phase: "encoding",
+        frame: targetFrames,
+        totalFrames: targetFrames,
+        percent: 93,
+        currentTimeSeconds: safeDuration.toFixed(1),
+      });
+
+      const muxArgs = ["-y", "-i", videoOnlyPath];
+      let nextInputIdx = 1;
+      let musicIdx = -1;
+      let voIdx = -1;
+      const sfxMapped = [];
+
+      if (hasMusic) {
+        musicIdx = nextInputIdx++;
+        muxArgs.push("-stream_loop", "-1", "-i", audioPath);
+      }
+      if (hasVoiceover) {
+        voIdx = nextInputIdx++;
+        muxArgs.push("-i", voiceoverPath);
+      }
+      for (const sfx of validSfx) {
+        const idx = nextInputIdx++;
+        muxArgs.push("-i", sfx.path);
+        sfxMapped.push({
+          idx,
+          timeSec: Number(sfx.timeSec),
+          volume: Math.min(1.5, Math.max(0.05, Number(sfx.volume) || 0.85)),
+        });
+      }
+
+      const filterSteps = [
+        `anullsrc=channel_layout=stereo:sample_rate=44100:d=${safeDuration}[base]`,
+      ];
+      const mixInputs = ["[base]"];
+
+      if (hasMusic) {
+        const musicVol = hasVoiceover ? "0.20" : "0.55";
+        filterSteps.push(
+          `[${musicIdx}:a]aresample=44100,aformat=channel_layouts=stereo,volume=${musicVol}[bg]`
+        );
+        mixInputs.push("[bg]");
+      }
+
+      if (hasVoiceover) {
+        filterSteps.push(
+          `[${voIdx}:a]aresample=44100,aformat=channel_layouts=stereo,volume=1.0[vo]`
+        );
+        mixInputs.push("[vo]");
+      }
+
+      sfxMapped.forEach((sfx, k) => {
+        const delayMs = Math.max(0, Math.round(sfx.timeSec * 1000));
+        filterSteps.push(
+          `[${sfx.idx}:a]aresample=44100,aformat=channel_layouts=stereo,adelay=${delayMs}|${delayMs},volume=${sfx.volume.toFixed(2)}[sfx${k}]`
+        );
+        mixInputs.push(`[sfx${k}]`);
+      });
+
+      filterSteps.push(
+        `${mixInputs.join("")}amix=inputs=${mixInputs.length}:duration=first:normalize=0[aout]`
+      );
+
+      muxArgs.push(
+        "-threads", "1",
+        "-filter_complex",
+        filterSteps.join(";"),
+        "-map", "0:v:0",
+        "-map", "[aout]",
+        "-c:v", "copy",
+        "-c:a", "aac",
+        "-b:a", "192k",
+        "-shortest",
+        "-movflags", "+faststart",
+        outputPath
+      );
+
+      await new Promise((resolve, reject) => {
+        const muxProc = spawn(FFMPEG_PATH, muxArgs);
+        let muxLog = "";
+        muxProc.stderr.on("data", (c) => {
+          muxLog += c.toString();
+          if (muxLog.length > 4000) muxLog = muxLog.slice(-3000);
+        });
+        muxProc.on("close", (code) => {
+          if (code === 0) resolve(true);
+          else reject(new Error(`FFmpeg audio mux finalizó con código ${code}: ${muxLog.slice(-400)}`));
+        });
+        muxProc.on("error", (err) => reject(err));
+      });
+    }
 
     onProgress?.({
       phase: "done",
@@ -721,6 +737,9 @@ export async function renderHtmlToMp4({
     }
     if (page) {
       await page.close().catch(() => {});
+    }
+    if (hasAnyAudioTrack && fs.existsSync(videoOnlyPath)) {
+      fs.unlink(videoOnlyPath, () => {});
     }
   }
 }
