@@ -280,7 +280,7 @@ const mcpHandler = createMcpHandler(
       {
         title: "Iniciar Renderizado MP4",
         description:
-          "Encola un trabajo asíncrono de renderizado HTML-a-MP4 en renderer-service y devuelve el jobId. Si no se pasa sfxEvents, parsea automáticamente <meta name=\"zyrvae-sfx\"> desde el HTML.",
+          "Encola un trabajo asíncrono de renderizado HTML-a-MP4 en renderer-service y devuelve el jobId. Si no se pasa sfxEvents, parsea automáticamente <meta name=\"zyrvae-sfx\"> desde el HTML. Podés pasar voiceoverText + voiceoverVoiceId para generar la voz en off directo en el servidor sin transferir Base64 por el contexto MCP.",
         inputSchema: z.object({
           html: z.string().min(1).describe("Documento HTML autónomo completo"),
           filename: z.string().optional().describe("Nombre/título del video a renderizar"),
@@ -304,10 +304,33 @@ const mcpHandler = createMcpHandler(
             .describe("ID de preset de música (ej. dark-tech, minimal-editorial, saas-energy, ambient-luxury)"),
           audioBase64: z.string().optional().describe("Música de fondo personalizada en base64"),
           audioExt: z.string().optional().describe("Extensión de música personalizada (ej. mp3, wav)"),
+          voiceoverText: z
+            .string()
+            .min(1)
+            .max(MAX_TTS_CHARACTERS)
+            .optional()
+            .describe("Guion para generar la voz en off con ElevenLabs directo en el servidor (evita pasar Base64 por MCP)"),
+          voiceoverVoiceId: z
+            .string()
+            .min(1)
+            .optional()
+            .describe("ID de voz de ElevenLabs para voiceoverText (obtenido de list_voices)"),
+          voiceoverStability: z
+            .number()
+            .min(0)
+            .max(1)
+            .optional()
+            .describe("Estabilidad para voiceoverText (0..1, default 0.5)"),
+          voiceoverSimilarityBoost: z
+            .number()
+            .min(0)
+            .max(1)
+            .optional()
+            .describe("Similitud con la voz original para voiceoverText (0..1, default 0.75)"),
           voiceoverBase64: z
             .string()
             .optional()
-            .describe("Voz en off MP3 en base64 (ej. salida de generate_voiceover)"),
+            .describe("Voz en off MP3 en base64 (opcional si no se usa voiceoverText)"),
           voiceoverExt: z.string().optional().describe("Extensión de voz en off (default mp3)"),
           sfxEvents: z
             .array(
@@ -334,6 +357,10 @@ const mcpHandler = createMcpHandler(
         musicPresetId,
         audioBase64,
         audioExt,
+        voiceoverText,
+        voiceoverVoiceId,
+        voiceoverStability,
+        voiceoverSimilarityBoost,
         voiceoverBase64,
         voiceoverExt,
         sfxEvents,
@@ -344,7 +371,51 @@ const mcpHandler = createMcpHandler(
         }
 
         const resolvedAudioBase64 = audioBase64?.trim() || "";
-        const resolvedVoiceoverBase64 = voiceoverBase64?.trim() || "";
+        let resolvedVoiceoverBase64 = voiceoverBase64?.trim() || "";
+        let resolvedVoiceoverExt = voiceoverExt || (resolvedVoiceoverBase64 ? "mp3" : null);
+        let voiceoverSource: "none" | "base64" | "elevenlabs_server" = resolvedVoiceoverBase64
+          ? "base64"
+          : "none";
+        let voiceoverSizeBytes: number | null = resolvedVoiceoverBase64
+          ? Buffer.byteLength(resolvedVoiceoverBase64, "base64")
+          : null;
+
+        if (!resolvedVoiceoverBase64 && voiceoverText?.trim()) {
+          const cleanVoiceId = voiceoverVoiceId?.trim() || "";
+          if (!cleanVoiceId) {
+            return jsonToolResult(
+              {
+                error:
+                  "Debes proporcionar voiceoverVoiceId junto con voiceoverText (obtenelo con list_voices).",
+              },
+              true
+            );
+          }
+
+          const ttsRes = await synthesizeElevenLabsVoice({
+            text: voiceoverText,
+            voiceId: cleanVoiceId,
+            stability: voiceoverStability,
+            similarityBoost: voiceoverSimilarityBoost,
+          });
+
+          if (!ttsRes.ok || !ttsRes.base64) {
+            return jsonToolResult(
+              {
+                error: ttsRes.error || "No se pudo sintetizar la voz en off en el servidor.",
+                status: ttsRes.status,
+                details: ttsRes.details,
+              },
+              true
+            );
+          }
+
+          resolvedVoiceoverBase64 = ttsRes.base64;
+          resolvedVoiceoverExt = ttsRes.ext || "mp3";
+          voiceoverSource = "elevenlabs_server";
+          voiceoverSizeBytes = ttsRes.sizeBytes ?? null;
+        }
+
         const resolvedSfxEvents =
           sfxEvents !== undefined
             ? sfxEvents.map((ev) => ({
@@ -388,7 +459,7 @@ const mcpHandler = createMcpHandler(
           audioExt: audioExt || null,
           musicPresetId: musicPresetId?.trim() || null,
           voiceoverBase64: resolvedVoiceoverBase64 || null,
-          voiceoverExt: voiceoverExt || (resolvedVoiceoverBase64 ? "mp3" : null),
+          voiceoverExt: resolvedVoiceoverExt,
           sfxEvents: resolvedSfxEvents,
           async: true,
         };
@@ -459,6 +530,8 @@ const mcpHandler = createMcpHandler(
           aspectRatio,
           width: dims.width,
           height: dims.height,
+          voiceoverSource,
+          voiceoverSizeBytes,
           sfxSource: sfxEvents !== undefined ? "explicit" : "html_meta",
           sfxEvents: resolvedSfxEvents,
           rendererUrl: getPublicRendererUrl(backendUrl),
